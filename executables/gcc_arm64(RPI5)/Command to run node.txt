@@ -3,4 +3,4 @@ Open terminal and change directory to the executable folder.
 Make sure it is executable using:
 	chmod +x l2lidar_ros2
  Then to execute:
-	./l2lidar_node --ros-./l2lidar_ros2 --ros-args --params-file /home/robot/SoftwareDev/ros2_ws/src/l2lidar_ros2/config/l2lidar.yaml
+	./l2lidar_node --ros-./l2lidar_ros2 --ros-args --params-file /home/robot/SoftwareDev/ros2_ws/src/l2lidar_ros2/config/l2lidar_node.yaml

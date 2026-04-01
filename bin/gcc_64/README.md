@@ -1,7 +1,9 @@
-l2lidar_ros2
+l2lidar_node
 ============
 
-**updated 2026-03-11**
+**updated 2026-04-01**
+============
+
 Overview
 ============
 
@@ -10,6 +12,8 @@ l2lidar_ros2 is a standalone ROS 2 Jazzy driver node for the **Unitree L2 4D LiD
 This package publishes synchronized **3D point cloud** and **IMU data** using standard ROS 2 message types and is intended for robotics perception, mapping, and localization applications.
 
 The node runs without any Qt GUI components and is designed to be launched independently and visualized using RViz2.
+
+NOTE: This replaces the L2lidar_ros2 (depracated) github repo: https://github.com/markgol/l2lidar_ros2
 
 * * *
 
@@ -70,6 +74,20 @@ l2lidar_ros2 node
 
 
 The node uses Qt’s networking and event system for UDP packet reception and ROS 2 publishers for message dissemination. No Qt GUI or ROS GUI dependencies are used.
+
+****
+
+## EXECUTABLES
+
+The exectuable for gcc_64 (Ubuntu x86_64) has been tested under Windows 11 through WSL2 running Ubuntu24.04.
+
+The exectuable for aarch64 (gcc_arm64) has been tested under Ubuntu 24.04 on a RPI5.
+
+There is no executable to run under Windows 11 since Windows 11 does not directly support ROS2.
+
+If you are only going to use the executables they cna be found at:
+
+https://github.com/markgol/l2lidar_node/tree/main/executables
 
 * * *
 
@@ -335,7 +353,7 @@ The L2lidar class was updated to improve computational accuracy and time stamp h
 
 This allows the user to specify that 3D frames or 2D frames are to be published.  It also allows the user to specify the pose (rotation) correction is to be applied before the point cloud data is published.
 
-**0.2.2** - added static transform publishing
+**0.2.2** - added static transform publishing, renamed from l2lidar_ros2
 
 This specifies the static fixed transforms.  We already know the l2idar_frame -> l2lidar_imu.  This also adds the transform robot origin frame (base_link) -> l2lidar_frame.  This implies the L2 is at a fixed location on robot.
 
@@ -355,5 +373,5 @@ Unitree license, see license file: Unitree BSD-3 LICENSE.txt
 Maintainer
 ----------
 
-https://github.com/markgol/l2lidar_ros2  
+https://github.com/markgol/l2lidar_node  
 Support and contact via GitHub repository issues.
