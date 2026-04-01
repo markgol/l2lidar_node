@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=QtCreator (ROS2 Jazzy)
+Comment=QtCreator with ROS2 environment
+Exec=bash -c "source /opt/ros/jazzy/setup.bash && source /home/robot/SoftwareDev/ros2_ws/install/setup.bash && /opt/Qt/Tools/QtCreator/bin/qtcreator"
+Icon=QtProject-qtcreator
+Terminal=false
+Categories=Development;
+Path=
+StartupNotify=false

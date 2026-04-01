@@ -1,0 +1,46 @@
+l2lidar_node:
+  ros__parameters:
+
+    # ---------------- Network ----------------
+    l2_ip: "192.168.41.62"
+    l2_port: 6101
+
+    host_ip: "192.168.41.76"
+    host_port: 6201
+
+    # ---------------- Time Sync ----------------
+    # both of these must be true for aggregation
+    enable_l2_time_correction: true
+    enable_l2_host_sync: true
+
+    # sync rate host -> L2 (milliseconds)
+    l2_sync_rate_ms: 30
+
+    # ---------------- Latency ----------------
+    enable_latency_measure: false
+
+    # ---------------- Frames ----------------
+    frame_id: "l2lidar_frame"
+    imu_frame_id: "l2lidar_imu"
+    robot_id: "base_link"
+    robot_x: 0.1
+    robot_y: 0.0
+    robot_z: 0.2
+
+    # ---------------- Point Cloud ----------------
+    frame3d: true
+    imu_adjust: true
+    
+    #----------------- Watch dog timer -----
+    watchdog_timeout_ms: 60000
+
+    # ---------------- ROS QoS ----------------
+    pointcloud_queue_size: 20
+    imu_queue_size: 20
+    # If this is set to 0 there is no aggregation
+    # 39 is the number of frames per full hemishpere
+    # rotation.  Note that he L2 does not have exactly
+    # 39 per rotation.  Th precession of the scans fills
+    # in between the last rotation scans.
+    aggregateNframes: 38
+    

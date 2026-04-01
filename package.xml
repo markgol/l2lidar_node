@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>l2lidar_node</name>
+  <version>0.1.0</version>
+  <description>L2 LiDAR ROS2 node driver using Qt6 UDP (Qt 6.10 runtime)</description>
+
+  <maintainer email="17959258+markgol@users.noreply.github.com">Mark Stegall</maintainer>
+  <license>GPL-3.0</license>
+
+  <!-- Build system -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- ROS2 dependencies -->
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>geometry_msgs</depend>
+
+  <!-- Qt dependency (generic Qt6, version resolved by CMake) -->
+  <build_depend>qt6-base-dev</build_depend>
+  <exec_depend>qt6-base-dev</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
