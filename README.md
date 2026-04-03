@@ -13,7 +13,7 @@ This package publishes synchronized **3D point cloud** and **IMU data** using st
 
 The node runs without any Qt GUI components and is designed to be launched independently and visualized using RViz2.
 
-This application utlitizes the L2lidarClass for the driver interface. It is also available sepately at:
+This application utlitizes the L2lidarClass for the driver interface. This driver is also available separately at:
 
 https://github.com/markgol/L2lidarClass
 
