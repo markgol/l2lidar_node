@@ -13,6 +13,12 @@ This package publishes synchronized **3D point cloud** and **IMU data** using st
 
 The node runs without any Qt GUI components and is designed to be launched independently and visualized using RViz2.
 
+This application utlitizes L2lidarClass for the driver interface. It is also available sepately at:
+
+https://github.com/markgol/L2lidarClass
+
+
+
 NOTE: This replaces the L2lidar_ros2 (depracated) github repo: https://github.com/markgol/l2lidar_ros2
 
 * * *
@@ -57,7 +63,7 @@ L2lidar (Qt 6.10 backend)
 
         |
 
-l2lidar_ros2 node
+l2lidar_node
 
         |
 
@@ -375,3 +381,5 @@ Maintainer
 
 https://github.com/markgol/l2lidar_node  
 Support and contact via GitHub repository issues.
+
+
