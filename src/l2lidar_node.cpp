@@ -65,6 +65,8 @@
 //                          Changed point time from float to double
 //		V0.2.1	2026-03-06	Paramterized  frame3d and imu_adjust settings
 //      V0.2.2  2026-03-12  Added static robot TF publish
+//      V0.2.3  2026-04-12  Added enable/disable IMU publishing
+//                          changed QOS for publishers to SensorDataQoS()
 //
 #include "l2lidar_node.hpp"
 
@@ -99,9 +101,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 	
 	declare_parameter<int>("watchdog_timeout_ms", 1000);
 
-    declare_parameter<int>("pointcloud_queue_size", 10);
-    declare_parameter<int>("imu_queue_size", 10);
     declare_parameter<int>("aggregateNframes", 38);
+
+    declare_parameter<bool>("enable_IMU_publishing", true);
 
     // get parameters from config file
 
@@ -147,16 +149,20 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     watchdog_timer_.start(500);  // check twice per second
 
-    // ---------------- ROS publishers ----------------
-    int pc_queue_size;
-    int imu_queue_size;
-
-    get_parameter("pointcloud_queue_size", pc_queue_size);
-    get_parameter("imu_queue_size", imu_queue_size);
+    // ---------------- point cloud -------------------
     get_parameter("aggregateNframes", aggregateNframes);
 
-    imu_pub_ = create_publisher<sensor_msgs::msg::Imu>("/imu/data", imu_queue_size);
-    pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/points", pc_queue_size);
+    get_parameter("enable_IMU_publishing", enable_IMU_publishing_);
+
+    // This node still needs to process IMU packets from the L2
+    // so that rotation correction cn be applied if enabled
+    // The IMU publishing is also optional
+    if(enable_IMU_publishing_) {
+        imu_pub_ = create_publisher<sensor_msgs::msg::Imu>("/imu/data", rclcpp::SensorDataQoS());
+    }
+
+    pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/points", rclcpp::SensorDataQoS());
+
     tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
     publishStaticTransform();
 
@@ -290,7 +296,9 @@ void L2LidarNode::onImuReceived()
     msg.linear_acceleration.y = imu_packet.data.linear_acceleration[1];
     msg.linear_acceleration.z = imu_packet.data.linear_acceleration[2];
 
-    imu_pub_->publish(msg);
+    if(enable_IMU_publishing_) {
+        imu_pub_->publish(msg);
+    }
 }
 
 //---------------------------------------------------------------------

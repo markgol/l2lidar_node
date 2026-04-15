@@ -58,6 +58,8 @@
 //                          					aligned otthe requirements for LIO-SAM methodology
 //		V0.2.1	2026-03-06	Parameterized frame3d and imu_adjust
 //      V0.2.2  2026-03-12  Added static robot TF
+//      V0.2.3  2026-04-12  Added enable/disable IMU publishing
+//                          changed QOS for publishers to SensorDataQoS()
 //
 #pragma once
 
@@ -107,6 +109,8 @@ private:
 
     bool time_corr{true}, host_sync{true};
     int aggregateNframes{38};
+
+    bool enable_IMU_publishing_ {false};
 
 	bool frame3d, imu_adjust;
 	

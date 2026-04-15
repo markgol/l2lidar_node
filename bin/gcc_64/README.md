@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-04-01**
+**updated 2026-04-14**
 ============
 
 Overview
@@ -12,6 +12,12 @@ l2lidar_ros2 is a standalone ROS 2 Jazzy driver node for the **Unitree L2 4D LiD
 This package publishes synchronized **3D point cloud** and **IMU data** using standard ROS 2 message types and is intended for robotics perception, mapping, and localization applications.
 
 The node runs without any Qt GUI components and is designed to be launched independently and visualized using RViz2.
+
+This application utlitizes the L2lidarClass for the driver interface. This driver is also available separately at:
+
+https://github.com/markgol/L2lidarClass
+
+
 
 NOTE: This replaces the L2lidar_ros2 (depracated) github repo: https://github.com/markgol/l2lidar_ros2
 
@@ -57,7 +63,7 @@ L2lidar (Qt 6.10 backend)
 
         |
 
-l2lidar_ros2 node
+l2lidar_node
 
         |
 
@@ -123,8 +129,7 @@ Parameters
 | robot_x                     | float  | 0.0                                | x offset from lidar position                                |
 | robot_y                     | float  | 0.0                                | y offset from lidar position                                |
 | robot_z                     | float  | 0.0                                | z offset from lidar position                                |
-| `pointcloud_queue_size`     | int    | `10`                               | Point cloud publisher queue size                            |
-| `imu_queue_size`            | int    | `10`                               | IMU publisher queue size                                    |
+| `enable_IMU_publishing`     | bool   | `false`                            | true - publish IMU data                                     |
 | aggregateNframes            | int    | 38                                 | NUmber of L2 frames to aggregate for publishing             |
 | watchdog_timeout_ms         | int    | 35000                              | max time without data from L2 in msec                       |
 
@@ -174,7 +179,7 @@ Make sure Qt6 Core and Network modules are installed.
 
 (Edit to match your ROS2 workspace folder and repo source)
 
-`mkdir -p ~/ros2_ws/src cd ~/ros2_ws/srcgit clone <your_repo_url> l2lidar_ros2`
+`mkdir -p ~/ros2_ws/src cd ~/ros2_ws/srcgit clone <your_repo_url> l2lidar_node`
 
 * * *
 
@@ -182,7 +187,7 @@ Make sure Qt6 Core and Network modules are installed.
 
 (Edit to match your ROS2 workspace folder)
 
-`cd ~/ros2_ws source /opt/ros/jazzy/setup.bashcolcon build --packages-select l2lidar_ros2`
+`cd ~/ros2_ws source /opt/ros/jazzy/setup.bashcolcon build --packages-select l2lidar_node
 
 Then source:
 
@@ -195,15 +200,15 @@ Running the Node
 
 You should edit this to point to where you have the yaml configuration file.
 
-`run l2lidar_ros2 l2lidar_node --ros-args --params-file \home\robot\SoftwareDev\ros2_ws\src\l2lidar_ros2\bin\gcc_64\config/l2lidar_ros2.yaml`
+`run l2lidar_node l2lidar_node --ros-args --params-file \home\robot\SoftwareDev\ros2_ws\src\l2lidar_node\bin\gcc_64\config/l2lidar_node.yaml`
 
 Or using a launch file:
 
-`ros2 launch l2lidar_ros2 l2lidar.launch.py`
+`ros2 launch l2lidar_node l2lidar.launch.py`
 
 Or from terminal in folder with exectuable:
 
-`./l2lidar_node --params-file ./config/l2lidar_ros2.yaml`
+`./l2lidar_node --params-file ./config/l2lidar_node.yaml`
 
 This assumes are you in the folder with the following files:
     l2lidar_node
@@ -212,7 +217,7 @@ This assumes are you in the folder with the following files:
 
     libQt6Network.so.6.10.2
 
-    config/l2lidar_ros2.yaml
+    config/l2lidar_node.yaml
 
 * * *
 
@@ -225,7 +230,7 @@ Start RViz2:
 
 Load the provided configuration:
 
-`rviz2 -d share/l2lidar_ros2/rviz/l2lidar.rviz`
+`rviz2 -d share/l2lidar_node/rviz/l2lidar.rviz`
 
 Recommended settings:
 
@@ -353,7 +358,9 @@ The L2lidar class was updated to improve computational accuracy and time stamp h
 
 This allows the user to specify that 3D frames or 2D frames are to be published.  It also allows the user to specify the pose (rotation) correction is to be applied before the point cloud data is published.
 
-**0.2.2** - added static transform publishing, renamed from l2lidar_ros2
+**0.2.2** - added static transform publishing, renamed from l2lidar_ros2 to l2lidar_node
+
+**0.2.3** - Made publishing IMU data optional, changed ROS2 QOS publisher settins to SensorData
 
 This specifies the static fixed transforms.  We already know the l2idar_frame -> l2lidar_imu.  This also adds the transform robot origin frame (base_link) -> l2lidar_frame.  This implies the L2 is at a fixed location on robot.
 
@@ -362,7 +369,7 @@ This specifies the static fixed transforms.  We already know the l2idar_frame ->
 Licenses
 -------
 
-l2lidar_ros2 license, see license file: l2lidar_ros2 LICENSE.txt
+l2lidar_node license, see license file: l2lidar_node LICENSE.txt
 
 Qt license, see license file: Qt LICENSE LGPL.txt
 
