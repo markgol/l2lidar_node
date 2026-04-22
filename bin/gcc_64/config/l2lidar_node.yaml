@@ -25,19 +25,24 @@ l2lidar_node:
     robot_id: "base_link"
     robot_x: 0.1
     robot_y: 0.0
-    robot_z: 0.2
+    robot_z: 0.25
 
     # ---------------- Point Cloud ----------------
     frame3d: true
-    imu_adjust: false
+    imu_adjust: true
+
+    # ---------------- Calibration Override ----------------
+    EnableCalRangeOVR: false
+    calRangeScale: 0.000978
+    calRangeBias: -365.625
     
     #----------------- Watch dog timer -----
     watchdog_timeout_ms: 60000
-    
-        # ---------------- IMU publishing ------------
-    enable_IMU_publishing: false
 
-    # ---------------- Point Cloud ----------------
+    # ---------------- IMU publishing ------------
+    enable_IMU_publishing: true
+
+    # ---------------- point cloud frames ----------------
     # If this is set to 0 there is no aggregation
     # 39 is the number of frames per full hemishpere
     # rotation.  Note that he L2 does not have exactly

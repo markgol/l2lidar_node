@@ -60,6 +60,7 @@
 //      V0.2.2  2026-03-12  Added static robot TF
 //      V0.2.3  2026-04-12  Added enable/disable IMU publishing
 //                          changed QOS for publishers to SensorDataQoS()
+//      V0.3.0  2026-04-21  Added internal Range calibration override
 //
 #pragma once
 
@@ -90,11 +91,20 @@ private slots:
     void spinOnce();
     void watchdogCheck();
 
+    // This is standard ROS2 parameter callback
+    rcl_interfaces::msg::SetParametersResult onParamChange(
+        const std::vector<rclcpp::Parameter> &params);
+
 private:
     void publishStaticTransform();
     void shutdownNode(const std::string &reason);
 
     L2lidar lidar_;
+
+    // This is standard ROS2 parameter callback
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr cb_params_handle_;
+    rcl_interfaces::msg::SetParametersResult paramFail(const std::string &msg);
+        rcl_interfaces::msg::SetParametersResult paramSuccess();
 
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub_;
@@ -108,11 +118,26 @@ private:
     float robot_z_;
 
     bool time_corr{true}, host_sync{true};
+
+    // Possible future expansion
+    // for live parameter updates
     int aggregateNframes{38};
 
     bool enable_IMU_publishing_ {false};
 
-	bool frame3d, imu_adjust;
+    bool frame3d;
+
+    // Possible future expansion
+    // for live parameter updates
+    bool imu_adjust;
+
+    // calibration override
+    // These do not have to be globals
+    // This is for possible future expansion
+    // for live parameter updates
+    bool EnableCalRangeOVR_ {false};
+    double calRangeScale_ {0.000978};
+    double calRangeBias_ {-365.625};
 	
     // watchdog
     QTimer watchdog_timer_;

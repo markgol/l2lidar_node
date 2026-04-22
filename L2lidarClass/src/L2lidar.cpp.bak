@@ -106,7 +106,7 @@
 //                      Added range(m) to point cloud data.  It is already present
 //                      in the raw point cloud packet.  It saves recomputing it later
 //                      in a user app.  PCpoint.h has been changed to include this field.
-//  V1.0.0  2026-02-20  Separated L2lidar class from the L2diagnostic app and l2lidar_node app
+//  V1.0.0  2026-02-20  Separated L2lidar class from the L2diagnostic app and l2lidar_ros2 app
 //                      This is the initial release of the standalone L2lidar class
 //  V1.1.0  2026-02-22  Added [[maybe_unused]] to params for HandleRaw() packet decode
 //                      Corrected ConvertL2data2pointcloud() to generate more accurate timestamps.

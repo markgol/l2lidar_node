@@ -43,7 +43,7 @@ def generate_launch_description():
             'params_file',
             default_value=os.path.join(
                 os.getenv('AMENT_PREFIX_PATH').split(':')[0],
-                'share/l2lidar_node/config/l2lidar_node.yaml'
+                'share/l2lidar_node/config/l2lidar.yaml'
             ),
             description='Path to L2 LiDAR parameter file'
         ),

@@ -67,6 +67,18 @@
 //      V0.2.2  2026-03-12  Added static robot TF publish
 //      V0.2.3  2026-04-12  Added enable/disable IMU publishing
 //                          changed QOS for publishers to SensorDataQoS()
+//      V0.3.0  2026-04-21  Updated to L2lidarClass V1.2.0
+//                          Added internal Range calibration override
+//                          Added realtime override parameter setting for
+//                          the following parameters:
+//                              aggregateNframes
+//                              imu_adjust
+//                              EnableCalRangeOVR
+//                              calRangeScale
+//                              calRangeBias
+//                          Note: realtime overrides of parameters is not persistent.
+//                          If you want persistence you need to change the
+//                          config yaml file.
 //
 #include "l2lidar_node.hpp"
 
@@ -98,7 +110,11 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     declare_parameter<bool>("frame3d", true);
     declare_parameter<bool>("imu_adjust", true);
-	
+
+    declare_parameter<bool>("EnableCalRangeOVR", false);
+    declare_parameter<double>("calRangeScale", 0.000978);
+    declare_parameter<double>("calRangeBias", -365.625);
+
 	declare_parameter<int>("watchdog_timeout_ms", 1000);
 
     declare_parameter<int>("aggregateNframes", 38);
@@ -138,6 +154,14 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 	
     get_parameter("frame3d", frame3d);
     get_parameter("imu_adjust", imu_adjust);
+
+    // get override calibration parameters
+    get_parameter("EnableCalRangeOVR", EnableCalRangeOVR_);
+    get_parameter("calRangeScale", calRangeScale_);
+    get_parameter("calRangeBias", calRangeBias_);
+
+    lidar_.SetCalibrationOVR(calRangeScale_, calRangeBias_);
+    lidar_.EnableCalibrationOVR(EnableCalRangeOVR_);
 
     // --------- Watchdog timer settings---------------
     get_parameter("watchdog_timeout_ms", watchdog_timeout_ms_);
@@ -202,6 +226,11 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     spin_timer_.start(5); // 200 Hz spin
 
     RCLCPP_INFO(get_logger(), "L2Lidar node started");
+
+    // ---------------- ROS parameter callback -------
+    cb_params_handle_ = this->add_on_set_parameters_callback(
+        std::bind(&L2LidarNode::onParamChange, this, std::placeholders::_1)
+        );
 }
 
 //---------------------------------------------------------------------
@@ -314,7 +343,8 @@ void L2LidarNode::onPointCloudReceived()
     last_pc_time_.restart(); // restart watchdog
 
     Frame frame;
-    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d, imu_adjust))
+    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d, imu_adjust,
+                                         EnableCalRangeOVR_,calRangeScale_,calRangeBias_))
         return;
 
     if (frame.empty())
@@ -487,4 +517,61 @@ void L2LidarNode::publishStaticTransform()
 
     RCLCPP_INFO(get_logger(), "Published static TF: %s -> %s",
                 frame_id_.c_str(), imu_frame_id_.c_str());
+}
+
+
+//---------------------------------------------------------------------
+// onParamChange
+// This is the callback that handles parameter changes
+//---------------------------------------------------------------------
+rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
+    const std::vector<rclcpp::Parameter> &params)
+{
+    for (const auto &p : params) {
+        if (p.get_name() == "imu_adjust") {
+            bool flag = p.as_bool();
+            imu_adjust = flag;
+        }
+        else if (p.get_name() == "aggregateNframes") {
+            int nFrames = p.as_int();
+            if (nFrames < 0 || nFrames > 4000) return paramFail("aggregateNframes out of range: 0-4000");
+            aggregateNframes = nFrames;
+        }
+        else if (p.get_name() == "EnableCalRangeOVR") {
+            bool flag = p.as_bool();
+            EnableCalRangeOVR_= flag;
+           //new_cfg->keyframe_translation_thresh = t;
+        } else if (p.get_name() == "calRangeScale") {
+            double var = p.as_double();
+            if (var < 0.00025 || var > 0.002) return paramFail("calRangeScale out of range: 0.00025 - 0.002");
+            calRangeScale_ = var;
+        } else if (p.get_name() == "calRangeBias") {
+            double var = p.as_double();
+            if (var > 0.0 || var < -1000.0 ) return paramFail("calRangeBias out of range: 0.0 to -1000.0");
+            calRangeBias_ = var;
+        } else {
+            return paramFail("param mismatch or can not be changed dynamically");
+        }
+    }
+
+    return paramSuccess();
+}
+
+//---------------------------------------------------------------------
+// paramFail
+//---------------------------------------------------------------------
+rcl_interfaces::msg::SetParametersResult L2LidarNode::paramFail(const std::string &msg) {
+    rcl_interfaces::msg::SetParametersResult r;
+    r.successful = false;
+    r.reason = msg;
+    return r;
+}
+
+//---------------------------------------------------------------------
+// paramSuccess
+//---------------------------------------------------------------------
+rcl_interfaces::msg::SetParametersResult L2LidarNode::paramSuccess() {
+    rcl_interfaces::msg::SetParametersResult r;
+    r.successful = true;
+    return r;
 }

@@ -48,6 +48,9 @@
 //              relative time stamp for point changed float to double.
 //              Changes much of the point angular conversion to x,y,z
 //              to use double precision.
+//  2026-04-19  Added calibration overrides to:
+//                  parseFromPacketToPointCloud()
+//                  parseFromPacketPointCloud2D()
 //
 //-----------------------------------------------------------------------
 
@@ -197,7 +200,10 @@ inline void parseFromPacketToPointCloud(
     const LidarPointDataPacket &packet,
     bool use_system_timestamp = false,
     float range_min = 0,
-    float range_max = 100
+    float range_max = 100,
+    bool OverideCalibration = false,
+    double RangeScaleOVR = 0.000978,
+    double RangeBiasOVR = -365.625
     )
 {
     // scan info
@@ -240,6 +246,7 @@ inline void parseFromPacketToPointCloud(
     double theta_step = packet.data.com_horizontal_angle_step;
 
     float range_float;
+
     double sin_alpha, cos_alpha, sin_theta, cos_theta;
     double A, B, C;
 
@@ -257,7 +264,11 @@ inline void parseFromPacketToPointCloud(
         }
 
         // calculate point range in float type
-        range_float = packet.data.param.range_scale * ((float)ranges[j] + packet.data.param.range_bias);
+        if(OverideCalibration) {
+            range_float = RangeScaleOVR * ((float)ranges[j] + RangeBiasOVR);
+        } else {
+            range_float = packet.data.param.range_scale * ((float)ranges[j] + packet.data.param.range_bias);
+        }
 
         // jump points beyond range limit
         if ( range_float < packet.data.range_min || range_float > packet.data.range_max)
@@ -314,7 +325,11 @@ inline void parseFromPacketPointCloud2D(
     const Lidar2DPointDataPacket &packet,
     bool use_system_timestamp = true,
     float range_min = 0,
-    float range_max = 100)
+    float range_max = 100,
+    bool OverideCalibration = false,
+    double RangeScaleOVR = 0.000978,
+    double RangeBiasOVR = -365.625
+    )
 {
     // scan info
     const int num_of_points = packet.data.point_num;
@@ -357,7 +372,11 @@ inline void parseFromPacketPointCloud2D(
         }
 
         // calculate point range in float type
-        range_float = packet.data.param.range_scale * (ranges[j] + packet.data.param.range_bias);
+        if(OverideCalibration) {
+            range_float = RangeScaleOVR * ((float)ranges[j] + RangeBiasOVR);
+        } else {
+            range_float = packet.data.param.range_scale * ((float)ranges[j] + packet.data.param.range_bias);
+        }
 
         // jump points beyond range limit
         if (range_float < packet.data.range_min || range_float > packet.data.range_max)

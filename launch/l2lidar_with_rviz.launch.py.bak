@@ -22,7 +22,7 @@ def generate_launch_description():
             executable='l2lidar_node',
             name='l2lidar_node',
             output='screen',
-            parameters=[os.path.join(pkg_share, 'config', 'l2lidar_node.yaml')]
+            parameters=[os.path.join(pkg_share, 'config', 'l2lidar.yaml')]
         ),
 
         # RViz2

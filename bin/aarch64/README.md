@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-04-14**
+**updated 2026-04-21**
 ============
 
 Overview
@@ -131,6 +131,9 @@ Parameters
 | robot_z                     | float  | 0.0                                | z offset from lidar position                                |
 | `enable_IMU_publishing`     | bool   | `false`                            | true - publish IMU data                                     |
 | aggregateNframes            | int    | 38                                 | NUmber of L2 frames to aggregate for publishing             |
+| EnableCalRangeOVR           | bool   | false                              | Override internal L2 Range calibration                      |
+| calRangeScale               | float  | 0.000978                           | Range Scale override value                                  |
+| calRangeBias                | float  | -365.625                           | Range Bias override value                                   |
 | watchdog_timeout_ms         | int    | 35000                              | max time without data from L2 in msec                       |
 
 * * *
@@ -267,7 +270,9 @@ Static transform is published:
 
 `base_link --> l2lidar_frame
 
-This can be adjusted in code if the physical offset is known.
+The l2lidar_frame --> l2lidar_imu is set in the source to match the Unitree L2 published spec.
+
+The base_lik --> l2lidar_frame is set in the config yaml file and represents the offset from the robot base to the L2 robot location.  The mouting surface of the L2 is not 0.0, 0.0, 0.0.  See the Unitree L2 published specification for the offsets.
 
 * * *
 
@@ -363,6 +368,19 @@ This allows the user to specify that 3D frames or 2D frames are to be published.
 **0.2.3** - Made publishing IMU data optional, changed ROS2 QOS publisher settins to SensorData
 
 This specifies the static fixed transforms.  We already know the l2idar_frame -> l2lidar_imu.  This also adds the transform robot origin frame (base_link) -> l2lidar_frame.  This implies the L2 is at a fixed location on robot.
+
+**0.3.0** - Added override of L2 Range calibration parameters
+
+Added dynamic settings for certain parameters:
+
+| Parameter        | type  | range            |
+| ---------------- | ----- | ---------------- |
+| imu_adjust       | bool  | true, false      |
+| aggregateNframes | int   | 0 - 4000         |
+| calRangeScale    | float | 0.002 - 0.000250 |
+| calRangeScale    | float | 0.0 to -1000.0   |
+
+Note: When using the ROS2 param set commands float values must have a decimal point or an type error will be generated.  As an example: 100 must be 100.0.
 
 * * *
 
