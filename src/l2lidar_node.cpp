@@ -227,6 +227,40 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     RCLCPP_INFO(get_logger(), "L2Lidar node started");
 
+    // ---------------- live enable/disable service -------
+    // ~/enable accepts std_srvs/SetBool: true → start rotation,
+    // false → enter standby. Also gates the watchdog so a deliberate
+    // stop doesn't fire the no-IMU-data timeout and cause a respawn.
+    enable_srv_ = create_service<std_srvs::srv::SetBool>(
+        "~/enable",
+        [this](
+            const std::shared_ptr<std_srvs::srv::SetBool::Request> req,
+            std::shared_ptr<std_srvs::srv::SetBool::Response> res)
+        {
+            bool ok = req->data ? lidar_.LidarStartRotation()
+                                : lidar_.LidarStopRotation();
+            res->success = ok;
+            if (!ok) {
+                res->message = "L2 command send failed; check transport state";
+                return;
+            }
+            if (req->data) {
+                // resuming: re-arm watchdog
+                last_imu_time_.start();
+                last_pc_time_.start();
+                if (!watchdog_timer_.isActive())
+                    watchdog_timer_.start(500);
+                res->message = "rotation start sent; motor spin-up ~20 s";
+                RCLCPP_INFO(get_logger(), "enable=true: rotation start sent");
+            } else {
+                // stopping: pause watchdog so it doesn't fire on the
+                // expected stream gap
+                watchdog_timer_.stop();
+                res->message = "standby sent; watchdog paused";
+                RCLCPP_INFO(get_logger(), "enable=false: standby sent, watchdog paused");
+            }
+        });
+
     // ---------------- ROS parameter callback -------
     cb_params_handle_ = this->add_on_set_parameters_callback(
         std::bind(&L2LidarNode::onParamChange, this, std::placeholders::_1)

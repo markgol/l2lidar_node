@@ -67,6 +67,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
@@ -109,6 +110,11 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub_;
     std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_broadcaster_;
+
+    // Live enable/disable service. data=true starts rotation, data=false
+    // enters standby. Watchdog is also paused while in standby so a
+    // deliberate stop doesn't trigger a respawn loop.
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 
     std::string frame_id_; // lidar sensor frame
     std::string imu_frame_id_; // imu sensor frame
