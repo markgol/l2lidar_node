@@ -108,6 +108,22 @@ Topics
 
 * * *
 
+Services
+--------
+
+| Service     | Type                  | Description                                                                                                                                                                                                                                                                                       |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/enable` | `std_srvs/srv/SetBool` | Live start / stop of the L2's motor and data stream without restarting the node. `data: true` calls `LidarStartRotation()` (cloud rate ramps up over ~20 s; IMU resumes within ~1 s). `data: false` calls `LidarStopRotation()` and pauses the watchdog so the deliberate gap is not read as a fault. |
+
+Example:
+
+```bash
+ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: false}"
+ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: true}"
+```
+
+* * *
+
 Parameters
 ----------
 
