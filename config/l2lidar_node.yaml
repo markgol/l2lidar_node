@@ -5,16 +5,23 @@ l2lidar_node:
     l2_ip: "192.168.41.62"
     l2_port: 6101
 
-    host_ip: "192.168.41.32"
+    host_ip: "192.168.41.77"
     host_port: 6201
 
-    # ---------------- Time Sync ----------------
+    # --------- Time Sync and correction-------
     # both of these must be true for aggregation
     enable_l2_time_correction: true
     enable_l2_host_sync: true
+    # adjust time scale numerator and denominator
+    #    2,1 -> 2.0 is the ideal
+    # you can adjust to correct for what the
+    # accuracy of the internal oscillator versus your host
+    # for exmaple 1998,1000 ->1.998
+    timeScaleNum: 2
+    timeScaleDenom: 1
 
     # sync rate host -> L2 (milliseconds)
-    l2_sync_rate_ms: 30
+    l2_sync_rate_ms: 50
 
     # ---------------- Latency ----------------
     enable_latency_measure: false
@@ -29,7 +36,12 @@ l2lidar_node:
 
     # ---------------- Point Cloud ----------------
     frame3d: true
-    imu_adjust: true
+    imu_adjust: false
+
+    # ---------------- Calibration Override ----------------
+    EnableCalRangeOVR: false
+    calRangeScale: 0.000978
+    calRangeBias: -365.625
     
     #----------------- Watch dog timer -----
     watchdog_timeout_ms: 60000

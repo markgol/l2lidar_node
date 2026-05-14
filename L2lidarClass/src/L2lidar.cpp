@@ -106,7 +106,7 @@
 //                      Added range(m) to point cloud data.  It is already present
 //                      in the raw point cloud packet.  It saves recomputing it later
 //                      in a user app.  PCpoint.h has been changed to include this field.
-//  V1.0.0  2026-02-20  Separated L2lidar class from the L2diagnostic app and l2lidar_node app
+//  V1.0.0  2026-02-20  Separated L2lidar class from the L2diagnostic app and l2lidar_ros2 app
 //                      This is the initial release of the standalone L2lidar class
 //  V1.1.0  2026-02-22  Added [[maybe_unused]] to params for HandleRaw() packet decode
 //                      Corrected ConvertL2data2pointcloud() to generate more accurate timestamps.
@@ -114,6 +114,14 @@
 //                      ConvertL2data2pointcloud().
 //                      PCpoint structure member time change from float to long long
 //                      PCpoint structure member time units are now nanoseconds since Epoch
+//  V1.2.0  2026-04-19  Added range calibration overrides to:
+//                          parseFromPacketToPointCloud()
+//                          parseFromPacketPointCloud2D()
+//  V1.3.0  2026-05-12  Changed the SetL2TimeScale() and GetL2TimeScale() to use long long numerator,
+//                      long long denominator for time scaling instead of a double.
+//                      Changed time corrections to use only long long arithmetic instead of
+//                      double.  This preserves precision of the timestamps with
+//                      minimal numerical loss
 //
 //--------------------------------------------------------
 
@@ -439,8 +447,8 @@ void L2lidar::decode3D(const QByteArray& datagram, uint64_t Offset)
     const auto* pkt =
         reinterpret_cast<const LidarPointDataPacket*>(datagram.constData()+Offset);
 
-    double t1;
-    double t2;
+    long long t1;
+    long long t2;
 
     // critical section
     PacketMutex.lock();
@@ -453,15 +461,16 @@ void L2lidar::decode3D(const QByteArray& datagram, uint64_t Offset)
     // initally for test only changed latest
     // after testing also change packet
     if(enableL2TimeStampFix) {
-        t1 = (double)latest3DdataPacket_.data.info.stamp.sec +
-             ((double)latest3DdataPacket_.data.info.stamp.nsec*1.0e-9);
+        t1 = (long long)latest3DdataPacket_.data.info.stamp.sec * 1000000000ll +
+             (long long)latest3DdataPacket_.data.info.stamp.nsec;  // nanpseconds
 
-        t2 = ((t1-mLastTimestamp) * mL2ScaleTimeStamp) + mLastTimestamp;
+        // corrected time in nanoseconds
+        t2 = (((t1-mLastTimestamp) * mL2ScaleTimeNum)/mL2ScaleTimeDenom) + mLastTimestamp;
 
         // convert to seconds, nanoseconds
-        latestTimestamp_.data.sec = (uint32_t) t2;
-        t2 = t2 - (double)latestTimestamp_.data.sec;
-        latestTimestamp_.data.nsec = (uint32_t)(t2*1.0e9);
+        t1 = t2/1000000000ll; // convert t1 to seconds
+        latestTimestamp_.data.sec = (uint32_t) t1; // seconds
+        latestTimestamp_.data.nsec = t2 - (t1*1000000000ll); // nanoseconds remainder
 
         // update time stamp in the packet
         latest3DdataPacket_.data.info.stamp.sec = latestTimestamp_.data.sec;
@@ -498,8 +507,8 @@ void L2lidar::decode2D(const QByteArray& datagram, uint64_t Offset)
     const auto* pkt =
         reinterpret_cast<const Lidar2DPointDataPacket*>(datagram.constData()+Offset);
 
-    double t1;
-    double t2;
+    long long t1;
+    long long t2;
 
     // critical section
     PacketMutex.lock();
@@ -512,15 +521,16 @@ void L2lidar::decode2D(const QByteArray& datagram, uint64_t Offset)
     // initally for test only changed latest
     // after testing also change packet
     if(enableL2TimeStampFix) {
-        t1 = (double)latest2DdataPacket_.data.info.stamp.sec +
-             ((double)latest2DdataPacket_.data.info.stamp.nsec*1.0e-9);
+        t1 = (long long)latest3DdataPacket_.data.info.stamp.sec * 1000000000ll +
+             (long long)latest3DdataPacket_.data.info.stamp.nsec;  // nanpseconds
 
-        t2 = ((t1-mLastTimestamp) * mL2ScaleTimeStamp) + mLastTimestamp;
+        // corrected time in nanoseconds
+        t2 = (((t1-mLastTimestamp) * mL2ScaleTimeNum)/mL2ScaleTimeDenom) + mLastTimestamp;
 
         // convert to seconds, nanoseconds
-        latestTimestamp_.data.sec = (uint32_t) t2;
-        t2 = t2 - (double)latestTimestamp_.data.sec;
-        latestTimestamp_.data.nsec = (uint32_t)(t2*1.0e9);
+        t1 = t2/1000000000ll; // convert t1 to seconds
+        latestTimestamp_.data.sec = (uint32_t) t1; // seconds
+        latestTimestamp_.data.nsec = t2 - (t1*1000000000ll); // nanoseconds remainder
 
         // update time stamp in the packet
         latest2DdataPacket_.data.info.stamp.sec = latestTimestamp_.data.sec;
@@ -558,8 +568,8 @@ void L2lidar::decodeImu(const QByteArray& datagram, uint64_t Offset)
     const auto* pkt =
         reinterpret_cast<const LidarImuDataPacket*>(datagram.constData()+Offset);
 
-    double t1;
-    double t2;
+    long long t1;
+    long long t2;
 
     // critical section
     PacketMutex.lock();
@@ -571,14 +581,16 @@ void L2lidar::decodeImu(const QByteArray& datagram, uint64_t Offset)
     // initally for test only changed latest
     // after testing also change packet
     if(enableL2TimeStampFix) {
-        t1 = (double)pkt->data.info.stamp.sec +
-             ((double)pkt->data.info.stamp.nsec*1.0e-9);
-        t2 = ((t1-mLastTimestamp) * mL2ScaleTimeStamp) +mLastTimestamp;
+        t1 = (long long)latest3DdataPacket_.data.info.stamp.sec * 1000000000ll +
+             (long long)latest3DdataPacket_.data.info.stamp.nsec;  // nanpseconds
+
+        // corrected time in nanoseconds
+        t2 = (((t1-mLastTimestamp) * mL2ScaleTimeNum)/mL2ScaleTimeDenom) + mLastTimestamp;
 
         // convert to seconds, nanoseconds
-        latestTimestamp_.data.sec = (uint32_t) t2;
-        t2 = t2 - (double)latestTimestamp_.data.sec;
-        latestTimestamp_.data.nsec = (uint32_t)(t2*1.0e9);
+        t1 = t2/1000000000ll; // convert t1 to seconds
+        latestTimestamp_.data.sec = (uint32_t) t1; // seconds
+        latestTimestamp_.data.nsec = t2 - (t1*1000000000ll); // nanoseconds remainder
 
         // update time stamp in the packet
         latestImuPacket_.data.info.stamp.sec = latestTimestamp_.data.sec;
@@ -1418,7 +1430,7 @@ bool L2lidar::SyncL2Clock()
         return false;
     }
 
-    mLastTimestamp = (double)Now.sec + (Now.nsec * 1.0e-9);
+    mLastTimestamp = (long long)Now.sec*1000000000ll + (long long)Now.nsec; // convert to nanoseconds
 
     return true;
 }
@@ -1447,7 +1459,7 @@ bool L2lidar::SyncL2Clock(TimeStamp timestamp)
         return false;
     }
 
-    mLastTimestamp = (double)timestamp.sec + (timestamp.nsec * 1.0e-9);
+    mLastTimestamp = (long long)timestamp.sec*1000000000ll + (long long)timestamp.nsec;  // convert to nanoseconds
 
     return true;
 }
@@ -1824,6 +1836,8 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
     // Retrieve packet
     unilidar_sdk2::PointCloudUnitree cloud;
 
+    // use system time if host to sync is not true
+    // use system time if l2 time stamp ifx is not true
     bool UseSystemTime = !(mL2EnableSyncHost && enableL2TimeStampFix);
 
     if(Frame3D) {
@@ -1892,6 +1906,8 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
         if(adjustWithIMU) {
             rotateByQuaternion(Quat,p.x,p.y,p.z);
         }
+        // Unitree provided initially as float but calculations all done as double
+        // each point time is adjusted to be epoch time in nanoseconds
         actualtime = (long long) (p.time*1.0e9+0.5) + adjustedTime;
 
         frame.push_back({

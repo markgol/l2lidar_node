@@ -54,9 +54,25 @@
 //
 //		V0.1.0	2026-02-16	Initial package skeleton
 //      V0.2.0  2026-02-21  Added aggregation of L2 frames for publishing
-//                          This is needed to align point cloud publishing
-//                          aligned otthe requirements for LIO-SAM methodology
+//      V1.0.0  2026-05-12  This is the first production release.
 //
+
+//--------------------------------------------------------
+// GPL-3.0 license
+//
+// This file is part of l2lidar_node.
+//
+// l2lidar_node is free software : you can redistribute it and /or modify it under
+// the terms of the GNU General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// l2lidar_node is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with L2diagnsotic.
+// If not, see < https://www.gnu.org/licenses/>.
+//--------------------------------------------------------
+
 #include <QCoreApplication>
 #include <csignal>
 #include <atomic>

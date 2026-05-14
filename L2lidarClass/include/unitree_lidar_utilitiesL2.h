@@ -239,6 +239,8 @@ inline void parseFromPacketToPointCloud(
     auto &ranges = packet.data.ranges;
     auto &intensities = packet.data.intensities;
 
+    // Unitree provides the cal data as float
+    // but use double for calculations
     double time_relative = 0.0;
     double alpha_cur = packet.data.angle_min + packet.data.param.alpha_angle_bias;
     double alpha_step = packet.data.angle_increment;
@@ -353,6 +355,8 @@ inline void parseFromPacketPointCloud2D(
     auto &ranges = packet.data.ranges;
     auto &intensities = packet.data.intensities;
 
+    // Unitree provides the cal data as float
+    // but use double for calculations
     double time_relative = 0;
     double alpha_cur = packet.data.angle_min + packet.data.param.alpha_angle_bias;
     double alpha_step = packet.data.angle_increment;

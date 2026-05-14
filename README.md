@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-04-21**
+**updated 2026-05-13**
 ============
 
 Overview
@@ -111,8 +111,8 @@ Topics
 Services
 --------
 
-| Service     | Type                  | Description                                                                                                                                                                                                                                                                                       |
-| ----------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service    | Type                   | Description                                                                                                                                                                                                                                                                                           |
+| ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `~/enable` | `std_srvs/srv/SetBool` | Live start / stop of the L2's motor and data stream without restarting the node. `data: true` calls `LidarStartRotation()` (cloud rate ramps up over ~20 s; IMU resumes within ~1 s). `data: false` calls `LidarStopRotation()` and pauses the watchdog so the deliberate gap is not read as a fault. |
 
 Example:
@@ -397,6 +397,10 @@ Added dynamic settings for certain parameters:
 | calRangeScale    | float | 0.0 to -1000.0   |
 
 Note: When using the ROS2 param set commands float values must have a decimal point or an type error will be generated.  As an example: 100 must be 100.0.
+
+0.3.2 - Added services to start/stop rotation of L2, contributed by https://github.com/pondersome
+Updated cmakelist.txt file to allow proper linkage related to Qt 6.10 
+Updated to L2lidarClass V1.3.0
 
 * * *
 

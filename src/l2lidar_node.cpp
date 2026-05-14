@@ -2,6 +2,8 @@
 //
 //  L2lidar_node
 //  Author: Mark Stegall
+// Contributor: https://github.com/pondersome
+//
 //  Module: l2lidar_node.cpp
 //
 //	Purpose:
@@ -79,7 +81,36 @@
 //                          Note: realtime overrides of parameters is not persistent.
 //                          If you want persistence you need to change the
 //                          config yaml file.
+//      V0.3.1  2026-05-11  Corrected sensor_msgs::PointCloud2Iterator<float> iter_t(cloud, "time")
+//                          should have been type <double>
+//	    V0.3.2  2026-05-13  Added service to stop/start rotation, contributed by https://github.com/pondersome
+//      V1.0.0  2026-05-xx  This is the first production release.
+//                          Updated L2lidarClass to V1.3.0
+//                          Added config yaml parameters for setting the L2 timescale correction scale
+//                          Changed point time from float to double
+//                          changed the sensor_msgs::PointCloud2Iterator<float> iter_t(cloud, "time")
+//                          backed to float
+//                          to a float relative time point (it should be reconstructed into
+//                          an int64 in the subscriber node, using the message timestamp+relative time)
 //
+//--------------------------------------------------------
+
+//--------------------------------------------------------
+// GPL-3.0 license
+//
+// This file is part of l2lidar_node.
+//
+// l2lidar_node is free software : you can redistribute it and /or modify it under
+// the terms of the GNU General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// l2lidar_node is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with L2diagnsotic.
+// If not, see < https://www.gnu.org/licenses/>.
+//--------------------------------------------------------
+
 #include "l2lidar_node.hpp"
 
 #include <sensor_msgs/point_cloud2_iterator.hpp>
@@ -98,6 +129,8 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     declare_parameter<bool>("enable_l2_time_correction", true);
     declare_parameter<bool>("enable_l2_host_sync", true);
+    declare_parameter<int>("timeScaleNum", 2);
+    declare_parameter<int>("timeScaleDenom", 1);
     declare_parameter<int>("l2_sync_rate_ms", 50);
     declare_parameter<bool>("enable_latency_measure", false);
 
@@ -147,6 +180,14 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     get_parameter("enable_l2_time_correction", time_corr);
     get_parameter("enable_l2_host_sync", host_sync);
+
+    int timeScaleNum;
+    int timeScaleDenom;
+    get_parameter("timeScaleNum", timeScaleNum);
+    get_parameter("timeScaleDenom", timeScaleDenom);
+    timeScaleNum_ = timeScaleNum;
+    timeScaleDenom_ = timeScaleDenom;
+
     get_parameter("l2_sync_rate_ms", sync_rate);
     get_parameter("enable_latency_measure", latency);
 
@@ -162,6 +203,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     lidar_.SetCalibrationOVR(calRangeScale_, calRangeBias_);
     lidar_.EnableCalibrationOVR(EnableCalRangeOVR_);
+    lidar_.SetL2TimeScale(timeScaleNum_,timeScaleDenom_);
 
     // --------- Watchdog timer settings---------------
     get_parameter("watchdog_timeout_ms", watchdog_timeout_ms_);
@@ -199,6 +241,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     lidar_.EnableL2TimeCorrection(time_corr);
     // enable/disable host to L2 timebase sync
     lidar_.EnableL2TSsync(host_sync);
+
     // set the peroidicity of the host to L2 time sync
     lidar_.SetL2TSsyncRate(sync_rate);
     // enable/disable UDP RTT latency measurements
@@ -397,7 +440,6 @@ void L2LidarNode::onPointCloudReceived()
             starttime = frame[0].time;
         }
 
-        //aggframe.resize(oldAggsize+newFramesize); // increase aggframe for new points
         aggframe += frame;
 
         CurrentAggFrame++;
@@ -438,7 +480,7 @@ void L2LidarNode::onPointCloudReceived()
         "z", 1, sensor_msgs::msg::PointField::FLOAT32,
         "intensity", 1, sensor_msgs::msg::PointField::FLOAT32,
         "range", 1, sensor_msgs::msg::PointField::FLOAT32,
-        "time", 1, sensor_msgs::msg::PointField::FLOAT64
+        "time", 1, sensor_msgs::msg::PointField::FLOAT32
         );
 
     sensor_msgs::PointCloud2Iterator<float> iter_x(cloud, "x");
@@ -446,16 +488,14 @@ void L2LidarNode::onPointCloudReceived()
     sensor_msgs::PointCloud2Iterator<float> iter_z(cloud, "z");
     sensor_msgs::PointCloud2Iterator<float> iter_i(cloud, "intensity");
     sensor_msgs::PointCloud2Iterator<float> iter_r(cloud, "range");
-    // Field declared FLOAT64 above; iterator must match width or upper
-    // 4 bytes of every 8-byte slot stay uninitialized.
-    sensor_msgs::PointCloud2Iterator<double> iter_t(cloud, "time");
+    sensor_msgs::PointCloud2Iterator<float> iter_t(cloud, "time");
 
     if(UseAggFrame) {
         modifier.resize(aggframe.size());
         for (const PCpoint &p : std::as_const(aggframe))
         {
             long long relativetime;
-            double newtime;
+            float newtime;
             *iter_x = p.x;
             *iter_y = p.y;
             *iter_z = p.z;
@@ -477,7 +517,7 @@ void L2LidarNode::onPointCloudReceived()
         for (const PCpoint &p : std::as_const(frame))
         {
             long long relativetime;
-            double newtime;
+            float newtime;
             *iter_x = p.x;
             *iter_y = p.y;
             *iter_z = p.z;

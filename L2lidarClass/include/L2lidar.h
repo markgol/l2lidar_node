@@ -2,7 +2,7 @@
 //
 //  L2Diagnostic
 //  Author: Mark Stegall
-//  Module: LidarDecoder.h
+//  Module: L2lidar.h
 //
 //  Purpose:
 //  Determine correct operation of the Unitreee L2 Lidar hardware
@@ -82,7 +82,7 @@
 //                      Added range(m) to point cloud data.  It is already present
 //                      in the raw point cloud packet.  It saves recomputing it later
 //                      in a user app.  PCpoint.h has been changed to include this field.
-//  V1.0.0  2026-02-20  Separated L2lidar class from the L2diagnostic app and l2lidar_node app
+//  V1.0.0  2026-02-20  Separated L2lidar class from the L2diagnostic app and l2lidar_ros2 app
 //                      This is the initial release of the standalone L2lidar class
 //                      Changed the unitree_lidar_utilities.h,  the parse function for the
 //  V1.1.0  2026-02-22  Corrected ConvertL2data2pointcloud() to generate more accurate timestamps.
@@ -94,7 +94,11 @@
 //  V1.2.0  2026-04-19  Added range calibration overrides to:
 //                          parseFromPacketToPointCloud()
 //                          parseFromPacketPointCloud2D()
-//
+//  V1.3.0  2026-05-12  Changed the SetL2TimeScale() and GetL2TimeScale() to use long long numerator,
+//                      long long denominator for time scaling instead of a double.
+//                      Changed time corrections to use only long long arithmetic instead of
+//                      double.  This preserves precision of the timestamps with
+//                      minimal numerical loss
 //
 //--------------------------------------------------------
 
@@ -112,13 +116,13 @@
 //--------------------------------------------------------
 // GPL-3.0 license
 //
-// This file is part of L2diagnsotic.
+// This file is part of L2LidarClass.
 //
-// L2diagnsotic is free software : you can redistribute it and /or modify it under
+// L2LidarClass is free software : you can redistribute it and /or modify it under
 // the terms of the GNU General Public License as published by the Free Software Foundation,
 // either version 3 of the License, or (at your option) any later version.
 //
-// L2diagnsotic is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+// L2LidarClass is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 // without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 // See the GNU General Public License for more details.
 // You should have received a copy of the GNU General Public License along with L2diagnsotic.
@@ -272,8 +276,10 @@ public:
 
     // L2 Timstamp correction and controls
     void EnableL2TimeCorrection(bool enableflag) {enableL2TimeStampFix = enableflag; }
-    double GetL2TimeScale() {return mL2ScaleTimeStamp;}
-    void SetL2TimeScale(double Scale) {mL2ScaleTimeStamp = Scale;}
+    void GetL2TimeScale(long long& ScaleNumerator, long long& ScaleDenominator)
+            {ScaleNumerator = mL2ScaleTimeNum; ScaleDenominator = ScaleDenominator;}
+    void SetL2TimeScale(long long ScaleNumerator, long long ScaleDenominator)
+            {mL2ScaleTimeNum = ScaleNumerator; mL2ScaleTimeDenom = ScaleDenominator;}
 
     // L2 timestamp syncing to host (timer driven)
     void EnableL2TSsync(bool enable);
@@ -458,11 +464,12 @@ private: // variables
     // last known timestamp sync
     // This is used as offset along with scale to correct
     // the L2 timestamp
-    double mLastTimestamp {0};
+    long long mLastTimestamp {0}; // units are nanoseconds
     // L2 Fw Version 2.8.11.1, compile date: 2025-07-30
     // is known to have a timestamp which is slow by
     // a factor 2.0
-    double mL2ScaleTimeStamp {2.0};
+    long long mL2ScaleTimeNum {2};
+    long long mL2ScaleTimeDenom {1};
     bool mL2EnableSyncHost = false;
     uint32_t mL2TSsyncRate = {0}; // stop timer
 

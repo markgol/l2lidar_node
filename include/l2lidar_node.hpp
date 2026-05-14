@@ -2,6 +2,7 @@
 //
 //  L2lidar_node
 //  Author: Mark Stegall
+// Contributor: https://github.com/pondersome
 //  Module: l2lidar_node.hpp
 //
 //	Purpose:
@@ -61,7 +62,26 @@
 //      V0.2.3  2026-04-12  Added enable/disable IMU publishing
 //                          changed QOS for publishers to SensorDataQoS()
 //      V0.3.0  2026-04-21  Added internal Range calibration override
+//	    V0.3.2  2026-05-13  Added service to stop/start rotation, contributed by https://github.com/pondersome
+//      V1.0.0  2026-05-12  This is the first production release.
+//                          Added config yaml parameters for setting the L2 timescale correction scale
+
+//--------------------------------------------------------
+// GPL-3.0 license
 //
+// This file is part of l2lidar_node.
+//
+// l2lidar_node is free software : you can redistribute it and /or modify it under
+// the terms of the GNU General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// l2lidar_node is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with L2diagnsotic.
+// If not, see < https://www.gnu.org/licenses/>.
+//--------------------------------------------------------
+
 #pragma once
 
 #include <rclcpp/rclcpp.hpp>
@@ -124,6 +144,8 @@ private:
     float robot_z_;
 
     bool time_corr{true}, host_sync{true};
+    int64_t timeScaleNum_ {2};
+    int64_t timeScaleDenom_ {1};
 
     // Possible future expansion
     // for live parameter updates
