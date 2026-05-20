@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-05-13**
+**updated 2026-05-19**
 ============
 
 Overview
@@ -298,7 +298,7 @@ Static transform is published:
 
 The l2lidar_frame --> l2lidar_imu is set in the source to match the Unitree L2 published spec.
 
-The base_lik --> l2lidar_frame is set in the config yaml file and represents the offset from the robot base to the L2 robot location.  The mouting surface of the L2 is not 0.0, 0.0, 0.0.  See the Unitree L2 published specification for the offsets.
+The base_lik --> l2lidar_frame is set in the config yaml file and represents the offset from the robot base to the L2 robot location.  The center of the mouting surface of the L2 is 0.0, 0.0, 0.0.  of the lidar data.  It includes the 44.5mm offset from the mounting surface to the lidar scan plane.  This does not corresond to any of the mounting hole.  Note: the mouting holes are offset by 22.5 degrees from the x and y axis origin. 
 
 * * *
 
@@ -409,9 +409,11 @@ Added dynamic settings for certain parameters:
 
 Note: When using the ROS2 param set commands float values must have a decimal point or an type error will be generated.  As an example: 100 must be 100.0.
 
-0.3.2 - Added services to start/stop rotation of L2, contributed by https://github.com/pondersome
+**0.3.2** - Added services to start/stop rotation of L2, contributed by https://github.com/pondersome
 Updated cmakelist.txt file to allow proper linkage related to Qt 6.10 
 Updated to L2lidarClass V1.3.0
+
+**0.3.3** - Corrected statement on the mounting plane and the origin of the point cloud frame. There are no software changes in this revision.
 
 * * *
 
