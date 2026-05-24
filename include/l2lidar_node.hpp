@@ -2,8 +2,8 @@
 //
 //  L2lidar_node
 //  Author: Mark Stegall
-// Contributor: https://github.com/pondersome
 //  Module: l2lidar_node.hpp
+// Contributor: https://github.com/pondersome
 //
 //	Purpose:
 //		The l2lidar_node app is a ROS2 package which provides an interface
@@ -84,10 +84,10 @@
 
 #pragma once
 
+#include <std_srvs/srv/set_bool.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <std_srvs/srv/set_bool.hpp>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
@@ -147,16 +147,12 @@ private:
     int64_t timeScaleNum_ {2};
     int64_t timeScaleDenom_ {1};
 
-    // Possible future expansion
-    // for live parameter updates
     int aggregateNframes{38};
 
     bool enable_IMU_publishing_ {false};
 
     bool frame3d;
 
-    // Possible future expansion
-    // for live parameter updates
     bool imu_adjust;
 
     // calibration override

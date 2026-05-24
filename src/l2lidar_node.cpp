@@ -610,7 +610,9 @@ rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
         }
         else if (p.get_name() == "aggregateNframes") {
             int nFrames = p.as_int();
-            if (nFrames < 0 || nFrames > 4000) return paramFail("aggregateNframes out of range: 0-4000");
+            if (nFrames < 0 || nFrames > 4000) {
+                return paramFail("aggregateNframes out of range: 0-4000");
+            }
             aggregateNframes = nFrames;
         }
         else if (p.get_name() == "EnableCalRangeOVR") {
@@ -619,7 +621,9 @@ rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
            //new_cfg->keyframe_translation_thresh = t;
         } else if (p.get_name() == "calRangeScale") {
             double var = p.as_double();
-            if (var < 0.00025 || var > 0.002) return paramFail("calRangeScale out of range: 0.00025 - 0.002");
+            if (var < 0.00025 || var > 0.002) {
+                return paramFail("calRangeScale out of range: 0.00025 - 0.002");
+            }
             calRangeScale_ = var;
         } else if (p.get_name() == "calRangeBias") {
             double var = p.as_double();
