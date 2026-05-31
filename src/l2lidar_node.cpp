@@ -84,14 +84,17 @@
 //      V0.3.1  2026-05-11  Corrected sensor_msgs::PointCloud2Iterator<float> iter_t(cloud, "time")
 //                          should have been type <double>
 //	    V0.3.2  2026-05-13  Added service to stop/start rotation, contributed by https://github.com/pondersome
-//      V1.0.0  2026-05-xx  This is the first production release.
-//                          Updated L2lidarClass to V1.3.0
-//                          Added config yaml parameters for setting the L2 timescale correction scale
 //                          Changed point time from float to double
 //                          changed the sensor_msgs::PointCloud2Iterator<float> iter_t(cloud, "time")
 //                          backed to float
 //                          to a float relative time point (it should be reconstructed into
 //                          an int64 in the subscriber node, using the message timestamp+relative time)
+//                          Added config yaml parameters for setting the L2 timescale correction scale
+//      V0.3.3  2026-05-19  Documentation change only on L2 point cloud origin.
+//      V0.3.4  2026-05-31  Updated to L2lidarClass V1.3.3, corrects bugs in timestamp correction introduced
+//                          in the V1.3.0 L2lidarClass
+//
+//      V1.0.0  2026-0x-xx  This will be the first production release.
 //
 //--------------------------------------------------------
 

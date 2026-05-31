@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-05-19**
+**updated 2026-05-31**
 ============
 
 Overview
@@ -414,6 +414,8 @@ Updated cmakelist.txt file to allow proper linkage related to Qt 6.10
 Updated to L2lidarClass V1.3.0
 
 **0.3.3** - Corrected statement on the mounting plane and the origin of the point cloud frame. There are no software changes in this revision.
+
+0.3.4 - Updated to V1.3.3 of the L2lidarClass, this corrects a bug in the timestamp correction from the L2.
 
 * * *
 

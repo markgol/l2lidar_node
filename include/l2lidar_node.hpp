@@ -173,4 +173,6 @@ private:
 
     QTimer spin_timer_;
 
+    // service
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 };
