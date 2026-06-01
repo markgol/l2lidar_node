@@ -274,7 +274,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     RCLCPP_INFO(get_logger(), "L2Lidar node started");
 
     // ---------------- live enable/disable service -------
-    // ~/enable accepts std_srvs/SetBool: true → start rotation,
+    // ~/enable accepts std_srvs/SetBool: true -> start rotation,
     // false → enter standby. Also gates the watchdog so a deliberate
     // stop doesn't fire the no-IMU-data timeout and cause a respawn.
     enable_srv_ = create_service<std_srvs::srv::SetBool>(
