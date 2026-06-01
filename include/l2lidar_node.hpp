@@ -172,7 +172,4 @@ private:
     int watchdog_timeout_ms_;
 
     QTimer spin_timer_;
-
-    // service
-    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 };
