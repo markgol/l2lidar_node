@@ -93,6 +93,10 @@
 //      V0.3.3  2026-05-19  Documentation change only on L2 point cloud origin.
 //      V0.3.4  2026-05-31  Updated to L2lidarClass V1.3.3, corrects bugs in timestamp correction introduced
 //                          in the V1.3.0 L2lidarClass
+//					  Added disable/enable of IMU publishing
+//      V0.3.5  2026-06-03  Added enable/disable of TF publishing of base_link.
+//                          Added config parameters for accel and gyro covariances
+//                          Added initialization of the accel and gyro covariances to the IMU message
 //
 //      V1.0.0  2026-0x-xx  This will be the first production release.
 //
@@ -137,6 +141,8 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<int>("l2_sync_rate_ms", 50);
     declare_parameter<bool>("enable_latency_measure", false);
 
+
+    declare_parameter<bool>("disable_base_link_pub", false);
     declare_parameter<std::string>("frame_id", "l2lidar_frame");
     declare_parameter<std::string>("imu_frame_id", "l2lidar_imu");
     declare_parameter<std::string>("robot_id", "base_link");
@@ -156,11 +162,18 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<int>("aggregateNframes", 38);
 
     declare_parameter<bool>("enable_IMU_publishing", true);
+    declare_parameter<double>("accel_x_covar", 0.01);
+    declare_parameter<double>("accel_y_covar", 0.01);
+    declare_parameter<double>("accel_z_covar", 0.01);
+    declare_parameter<double>("gyro_x_covar", 0.000025);
+    declare_parameter<double>("gyro_y_covar", 0.000025);
+    declare_parameter<double>("gyro_z_covar", 0.0000002);
 
     // get parameters from config file
 
     // get IDs for publish
     // frame_id_, imu_frame_id_ and robot_id are private class members
+    get_parameter("disable_base_link_pub", disable_base_link_pub_);
     get_parameter("frame_id", frame_id_);
     get_parameter("imu_frame_id", imu_frame_id_);
     get_parameter("robot_id", robot_id_);
@@ -221,7 +234,14 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     // ---------------- point cloud -------------------
     get_parameter("aggregateNframes", aggregateNframes);
 
+    // IMU publishing
     get_parameter("enable_IMU_publishing", enable_IMU_publishing_);
+    get_parameter("accel_x_covar", accel_x_covar_);
+    get_parameter("accel_y_covar", accel_y_covar_);
+    get_parameter("accel_z_covar", accel_z_covar_);
+    get_parameter("gyro_x_covar", gyro_x_covar_);
+    get_parameter("gyro_y_covar", gyro_y_covar_);
+    get_parameter("gyro_z_covar", gyro_z_covar_);
 
     // This node still needs to process IMU packets from the L2
     // so that rotation correction cn be applied if enabled
@@ -383,6 +403,10 @@ void L2LidarNode::watchdogCheck()
 void L2LidarNode::onImuReceived()
 {
     last_imu_time_.restart();
+
+    if(!enable_IMU_publishing_) {
+        return;
+    }
     auto imu_packet = lidar_.imu();
 
     sensor_msgs::msg::Imu msg;
@@ -396,18 +420,29 @@ void L2LidarNode::onImuReceived()
     msg.orientation.x = imu_packet.data.quaternion[1];
     msg.orientation.y = imu_packet.data.quaternion[2];
     msg.orientation.z = imu_packet.data.quaternion[3];
+    msg.orientation_covariance[0] = -1; // flag as not valid
 
+    // gyro
     msg.angular_velocity.x = imu_packet.data.angular_velocity[0];
     msg.angular_velocity.y = imu_packet.data.angular_velocity[1];
     msg.angular_velocity.z = imu_packet.data.angular_velocity[2];
 
+    // gyro covariance
+    msg.angular_velocity_covariance[0] = accel_x_covar_;
+    msg.angular_velocity_covariance[4] = accel_y_covar_;
+    msg.angular_velocity_covariance[8] = accel_z_covar_;
+
+    // accel
     msg.linear_acceleration.x = imu_packet.data.linear_acceleration[0];
     msg.linear_acceleration.y = imu_packet.data.linear_acceleration[1];
     msg.linear_acceleration.z = imu_packet.data.linear_acceleration[2];
 
-    if(enable_IMU_publishing_) {
-        imu_pub_->publish(msg);
-    }
+    // accel covariance
+    msg.linear_acceleration_covariance[0] = gyro_x_covar_;
+    msg.linear_acceleration_covariance[4] = gyro_y_covar_;
+    msg.linear_acceleration_covariance[8] = gyro_z_covar_;
+
+	imu_pub_->publish(msg);
 }
 
 //---------------------------------------------------------------------
@@ -550,31 +585,31 @@ void L2LidarNode::onPointCloudReceived()
 //---------------------------------------------------------------------
 void L2LidarNode::publishStaticTransform()
 {
-    geometry_msgs::msg::TransformStamped tf_lidar;
-
     // This is the transform from base_link to l2lidar_drame
+    if(!disable_base_link_pub_) {
+        geometry_msgs::msg::TransformStamped tf_lidar;
 
-    tf_lidar.header.stamp = this->get_clock()->now();
-    tf_lidar.header.frame_id = robot_id_;   // "base_link"
-    tf_lidar.child_frame_id = frame_id_;    // "l2lidar_frame"
+        tf_lidar.header.stamp = this->get_clock()->now();
+        tf_lidar.header.frame_id = robot_id_;   // "base_link"
+        tf_lidar.child_frame_id = frame_id_;    // "l2lidar_frame"
 
-    tf_lidar.transform.translation.x = robot_x_;
-    tf_lidar.transform.translation.y =robot_y_;
-    tf_lidar.transform.translation.z = robot_z_;
+        tf_lidar.transform.translation.x = robot_x_;
+        tf_lidar.transform.translation.y =robot_y_;
+        tf_lidar.transform.translation.z = robot_z_;
 
-    // lirdar rotation matches robot rotation
-    tf_lidar.transform.rotation.x = 0.0;
-    tf_lidar.transform.rotation.y = 0.0;
-    tf_lidar.transform.rotation.z = 0.0;
-    tf_lidar.transform.rotation.w = 1.0;
+        // lidar rotation matches robot rotation
+        tf_lidar.transform.rotation.x = 0.0;
+        tf_lidar.transform.rotation.y = 0.0;
+        tf_lidar.transform.rotation.z = 0.0;
+        tf_lidar.transform.rotation.w = 1.0;
 
-    tf_broadcaster_->sendTransform(tf_lidar);
+        tf_broadcaster_->sendTransform(tf_lidar);
 
-    RCLCPP_INFO(get_logger(), "Published static TF: %s -> %s",
-                robot_id_.c_str(), frame_id_.c_str());
+        RCLCPP_INFO(get_logger(), "Published static TF: %s -> %s",
+                    robot_id_.c_str(), frame_id_.c_str());
+    }
 
-
-    // This is the transform from l2lidar_drame to the imu_frame
+    // This is the transform from l2lidar_frame to the imu_frame
 
     geometry_msgs::msg::TransformStamped tf_msg;
 

@@ -29,6 +29,7 @@ l2lidar_node:
     # ---------------- Frames ----------------
     frame_id: "l2lidar_frame"
     imu_frame_id: "l2lidar_imu"
+    disable_base_link_pub: false
     robot_id: "base_link"
     robot_x: 0.1
     robot_y: 0.0
@@ -48,6 +49,15 @@ l2lidar_node:
 
     # ---------------- IMU publishing ------------
     enable_IMU_publishing: true
+    # covariance values
+    # base stationay noise variance (stddev squared)
+    # from the IMU acceleration and gyroscope values
+    accel_x_covar: 0.01  # std dev 0.1 -> variance 0.01
+    accel_y_covar: 0.01  # std dev 0.1 -> variance 0.01
+    accel_z_covar: 0.01  # std dev 0.1 -> variance 0.01
+    gyro_x_covar: 0.000025 # std dev .005 -> variance 0.000025
+    gyro_y_covar: 0.000026 # std dev .005 -> variance 0.000025
+    gyro_z_covar: 0.0000002 # std dev .0001 use variance 0.0000002
 
     # ---------------- point cloud frames ----------------
     # If this is set to 0 there is no aggregation

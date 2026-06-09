@@ -63,8 +63,23 @@
 //                          changed QOS for publishers to SensorDataQoS()
 //      V0.3.0  2026-04-21  Added internal Range calibration override
 //	    V0.3.2  2026-05-13  Added service to stop/start rotation, contributed by https://github.com/pondersome
-//      V1.0.0  2026-05-12  This is the first production release.
+//                          Changed point time from float to double
+//                          changed the sensor_msgs::PointCloud2Iterator<float> iter_t(cloud, "time")
+//                          backed to float
+//                          to a float relative time point (it should be reconstructed into
+//                          an int64 in the subscriber node, using the message timestamp+relative time)
 //                          Added config yaml parameters for setting the L2 timescale correction scale
+//      V0.3.3  2026-05-19  Documentation change only on L2 point cloud origin.
+//      V0.3.4  2026-05-31  Updated to L2lidarClass V1.3.3, corrects bugs in timestamp correction introduced
+//                          in the V1.3.0 L2lidarClass
+//      V0.3.5  2026-06-03  Added enable/disable of TF publishing of base_link.
+//                          Added config parameters for accel and gyro covariances
+//                          Added initialization of the accel and gyro covariances to the IMU message
+//
+//      V1.0.0  2026-0x-xx  This will be the first production release.
+//                          Added config yaml parameters for setting the L2 timescale correction scale
+//
+//--------------------------------------------------------
 
 //--------------------------------------------------------
 // GPL-3.0 license
@@ -136,6 +151,7 @@ private:
     // deliberate stop doesn't trigger a respawn loop.
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 
+    bool disable_base_link_pub_ {false};
     std::string frame_id_; // lidar sensor frame
     std::string imu_frame_id_; // imu sensor frame
     std::string robot_id_; // robot frame
@@ -150,6 +166,12 @@ private:
     int aggregateNframes{38};
 
     bool enable_IMU_publishing_ {false};
+    double accel_x_covar_ {0.01};
+    double accel_y_covar_ {0.01};
+    double accel_z_covar_ {0.01};
+    double gyro_x_covar_ {0.000025};
+    double gyro_y_covar_ {0.000025};
+    double gyro_z_covar_ {0.0000001};
 
     bool frame3d;
 
@@ -172,4 +194,5 @@ private:
     int watchdog_timeout_ms_;
 
     QTimer spin_timer_;
+
 };
