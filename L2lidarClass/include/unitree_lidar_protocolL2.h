@@ -343,7 +343,7 @@ typedef struct
 typedef struct 
 {
     DataInfo info;
-    float quaternion[4];             // Quaternion Array.
+    float quaternion[4];             // Quaternion Array (w, x, y, z).
     float angular_velocity[3];       // Three-axis angular velocity values.
     float linear_acceleration[3];    // Three-axis acceleration values.
 }LidarImuData;

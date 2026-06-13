@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(l2lidar_node
-        VERSION 0.3.5
+        VERSION 0.3.6
         LANGUAGES CXX
   )
 
@@ -109,9 +109,81 @@ target_include_directories(l2lidar_node PUBLIC
 # Embed an RPATH so the binary resolves to the Qt 6.10 install at runtime.
 # Without this, Ubuntu 24.04's apt-installed Qt 6.4 (in /usr/lib) is picked
 # up by the loader and the binary dies on the Qt_6.10 symbol version.
+#set_target_properties(l2lidar_node PROPERTIES
+#  BUILD_WITH_INSTALL_RPATH TRUE
+#  INSTALL_RPATH "${QT610_PATH}/lib"
+#)
 set_target_properties(l2lidar_node PROPERTIES
-  BUILD_WITH_INSTALL_RPATH TRUE
-  INSTALL_RPATH "${QT610_PATH}/lib"
+  BUILD_RPATH "\$ORIGIN/lib"
+  BUILD_RPATH_USE_ORIGIN TRUE
+  INSTALL_RPATH "\$ORIGIN/lib"
+)
+
+# ============================
+# Distribution
+#
+# Note: This is specific to Qt 6.10.2 build
+# It uses libicu v73 which is bundled with the Qt 6.10.2 distro
+# This is in conflict with the Ubuntu libicu v74
+# The v73 shared libraries must be part of the distro
+# Files are copied to the dist folder inside the project build folder
+# for the specific architecture being built
+# ============================
+set(DIST_DIR ${CMAKE_BINARY_DIR}/dist)
+message(STATUS "DIST_DIR=${DIST_DIR}")
+add_custom_target(dist ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${DIST_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/lib
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/config
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/launch
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/rviz
+
+  COMMAND ${CMAKE_COMMAND} -E copy
+          $<TARGET_FILE:l2lidar_node>
+          ${DIST_DIR}/
+
+  COMMAND ${CMAKE_COMMAND} -E copy
+          ${QT610_PATH}/lib/libQt6Core.so.6.10.2
+          ${DIST_DIR}/lib/libQt6Core.so.6
+
+  COMMAND ${CMAKE_COMMAND} -E copy
+          ${QT610_PATH}/lib/libQt6Network.so.6.10.2
+          ${DIST_DIR}/lib/libQt6Network.so.6
+
+  COMMAND ${CMAKE_COMMAND} -E copy
+          ${QT610_PATH}/lib/libicui18n.so.73
+          ${DIST_DIR}/lib/libicui18n.so.73
+
+  COMMAND ${CMAKE_COMMAND} -E copy
+          ${QT610_PATH}/lib/libicuuc.so.73
+          ${DIST_DIR}/lib/libicuuc.so.73
+
+  COMMAND ${CMAKE_COMMAND} -E copy
+          ${QT610_PATH}/lib/libicudata.so.73
+                ${DIST_DIR}/lib/libicudata.so.73
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/config
+          ${DIST_DIR}/config
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/launch
+          ${DIST_DIR}/launch
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/rviz
+          ${DIST_DIR}/rviz
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/licenses
+          ${DIST_DIR}
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/docs
+          ${DIST_DIR}
+
+  DEPENDS l2lidar_node
 )
 
 # ============================
@@ -119,6 +191,12 @@ set_target_properties(l2lidar_node PROPERTIES
 # ============================
 install(TARGETS l2lidar_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(IMPORTED_RUNTIME_ARTIFACTS
+  Qt6::Core
+  Qt6::Network
+  DESTINATION lib/${PROJECT_NAME}/lib
 )
 
 install(DIRECTORY

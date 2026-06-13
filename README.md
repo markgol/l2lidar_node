@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-06-08**
+**updated 2026-06-12**
 ============
 
 Overview
@@ -9,7 +9,7 @@ Overview
 
 l2lidar_ros2 is a standalone ROS 2 Jazzy driver node for the **Unitree L2 4D LiDAR** sensor.  It provides a high-performance interface between the Unitree L2 hardware and ROS 2 by leveraging a Qt 6.10 UDP backend (`L2lidar` class) for deterministic packet handling, timestamp synchronization, and decoding.
 
-This package publishes synchronized **3D point cloud** and **IMU data** using standard ROS 2 message types and is intended for robotics perception, mapping, and localization applications.
+This package publishes **3D point cloud** and **IMU data** using standard ROS 2 message types and is intended for robotics perception, mapping, and localization applications.
 
 The node runs without any Qt GUI components and is designed to be launched independently and visualized using RViz2.
 
@@ -48,7 +48,7 @@ Features
 
 * Designed for Ubuntu 24.04 + ROS 2 Jazzy
 
-* Target platforms: Raspberry Pi 5 (ARM64) and x86_64
+* Target platforms: Raspberry Pi 5 (ARM64), Jetson Orin Nano (ARM64) and x86_64
 
 * * *
 
@@ -87,9 +87,11 @@ The node uses Qt’s networking and event system for UDP packet reception and RO
 
 The exectuable for gcc_64 (Ubuntu x86_64) has been tested under Windows 11 through WSL2 running Ubuntu24.04.
 
-The exectuable for aarch64 (gcc_arm64) has been tested under Ubuntu 24.04 on a RPI5.
+The exectuable for gcc_arm64(Ubuntu ARM64) has been tested under Ubuntu 24.04 on a RPI5 and Jetson Orin Nano
 
-There is no executable to run under Windows 11 since Windows 11 does not directly support ROS2.
+These can now run without the installation of Qt.
+
+There is no executable to run under Windows 11 since Windows 11 does not directly support ROS2 at this time.
 
 If you are only going to use the executables they can be found at:
 
@@ -201,7 +203,7 @@ Ensure ROS is sourced:
 
 * * *
 
-### 2. Install Qt 6.10.2
+### 2. Install Qt 6.10.2 (optional if using prebuilt exectuable)
 
 Install Qt 6.10.2 using the Qt Online Installer:
 
@@ -229,7 +231,25 @@ Then source:
 
 `source install/setup.bash`
 
-* * *
+### 5. Prebuilt exectuables
+
+You still must have ros2 jazzy installed.  This is assuming you are running Ubuntu 24.04.
+There are an install directories:
+install/
+    aarch64 (for the ARM64 or aarch64 hardware platforms such as the Raspberry PI or Nvidia Jetson Orin)
+    gcc_64 (for the x86_64 hardware platforms)
+
+These contain a copy of the executable and required Qt libraries that are needed to run the l2lidar_node app.
+
+The appropriate folder/subfolders should be copied to your target installation folder.
+
+No specific install steps are required.  If you are setting up a bash file to run the node remember to include sourcing the ros2 installation, your DDS if not defaulted, and your ROS domain ID if not defaulted.  This may also already be done in the .bashrc file for the user:
+
+```
+export ROS_DOMAIN_ID=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+source /opt/ros/jazzy/setup.bash
+```
 
 Running the Node
 ----------------
@@ -248,12 +268,9 @@ Or from terminal in folder with exectuable:
 
 This assumes are you in the folder with the following files:
     l2lidar_node
-
-    libQt6Core.so.6.10.2
-
-    libQt6Network.so.6.10.2
-
+    lib/libQt6* shared library files
     config/l2lidar_node.yaml
+    rviz/rvizl2lidar.rviz
 
 * * *
 
@@ -266,7 +283,7 @@ Start RViz2:
 
 Load the provided configuration:
 
-`rviz2 -d share/l2lidar_node/rviz/l2lidar.rviz`
+`rviz2 -d rviz/rvizl2lidar.rviz`
 
 Recommended settings:
 
@@ -346,13 +363,13 @@ Run under debugger from QtCreator:
 Known Limitations
 -----------------
 
-* No GUI configuration (command-line only)
+* No GUI configuration using .yaml config file (command-line only)
 
-* Static TF only (no dynamic motion TF yet)
+* Static TF only (no dynamic motion TF)
 
 * RViz IMU display plugin is not available in Jazzy; visualization is via TF and point cloud only
 
-* Requires Qt 6.10 due to UDP reliability fixes (Qt 6.4 is not supported)
+* Requires Qt 6.10 or later due to UDP reliability fixes (Qt 6.4 is not supported). This ionly required if your are compiling and building the app
 
 * * *
 
@@ -428,6 +445,8 @@ Added enable/disable of IMU publishing
 **0.3.5** - Added enable/disable of TF base_link (robot_id to frame_id) publishing.
 Added configuration parameters for accelerometer and gyroscopic covariances.
 Added initialization of the accelerometer and gyroscopic covariances for the IMU messages.
+
+**0.3.6** - No changes to the source code.  Changes to the CMakeList.txt file which build a install directory for the distributable app. This change allows the executable disto to be run without the installation of Qt.
 
 * * *
 

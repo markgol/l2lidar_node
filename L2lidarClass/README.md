@@ -102,6 +102,14 @@ Key Features
   
   * Host-driven periodic resynchronization
 
+* **Field notes (fw 2.8.11.1, build 20205-07-15 measured)**
+  
+  * The slow-clock factor is not exactly 2: one unit measured ~1.988 at cold start, drifting to ~1.991 over a 20 minute warm-up (issue #3)
+  
+  * The first cloud packet(s) after stream start carry `dirty_index` = 100.0 (initialization value; nothing is emitted during the 15 to 30 s motor spin-up); settled clean-unit values are roughly 0.7 median with spikes to about 8
+  
+  * **Erratum** for the vendor reference doc (Unitree_README_Verbatim.md, kept verbatim from Unitree): Its sample output labels the IMU quaternion `(x, y, z, w)`, but the wire order is `(w, x, y, z)`; see issue #2 for the verification
+
 * **Latency Measurement**
   
   * RTT latency using sequence IDs

@@ -477,6 +477,10 @@ private: // variables
     // L2 Fw Version 2.8.11.1, compile date: 2025-07-30
     // is known to have a timestamp which is slow by
     // a factor 2.0
+    // Bench measurement (see issue #3): on one 2.8.11.1 unit the true
+    // factor was ~1.988 at cold start, drifting to ~1.991 over a
+    // 20 minute warm-up (thermal; imu_temperature settles near 60 C).
+    // Num/Denom can express a measured value, e.g. 1988/1000.
     long long mL2ScaleTimeNum {2};
     long long mL2ScaleTimeDenom {1};
     bool mL2EnableSyncHost = false;
