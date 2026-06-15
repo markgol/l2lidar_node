@@ -20,9 +20,9 @@
 //		This ROS2 package publishes the point cloud data and IMU data
 //		for ROS2 subscribers.
 //
-//		- Publishes:
-//			/l2lidar/points	(sensor_msgs/PointCloud2)
-//			/l2lidar/imu (sensor_msgs/Imu)
+//		- Publishes (default:
+//			/points	(sensor_msgs/PointCloud2)
+//			/imu/data (sensor_msgs/Imu)
 //			Static TF transform support
 //
 //	Implementation
@@ -75,10 +75,20 @@
 //      V0.3.5  2026-06-03  Added enable/disable of TF publishing of base_link.
 //                          Added config parameters for accel and gyro covariances
 //                          Added initialization of the accel and gyro covariances to the IMU message
+//      V0.3.6  2026-06-12  Changes to CMakeList.txt file to create distribution file (subfolder dist
+//                          in the build folder for platform and build (release or debug).
+//      V0.3.7  2026-06-13  Added config file param for topic IDs for point cloud and imu data.
+//                          Code cleanup. Changing class member variable to end with an underscore to
+//                          idenfity class memebr variables versus local variables.
+//                          Added startup condition to support L2 power on in standby mode.
+//                          This l2lidar_node will not timeout in this case but requires a start service command
+//                          to send a command to the L2 to bring it out of standby.  If the L2 automatically starts
+//                          automatically then the IMU and Point cloud packets woudl still be published but l2lidar_node
+//                          would never timeout.  This is implelemented using the config param standby_on_powerup_enabled
 //
 //      V1.0.0  2026-0x-xx  This will be the first production release.
-//                          Added config yaml parameters for setting the L2 timescale correction scale
 //
+//  Note: class member variables end with an _
 //--------------------------------------------------------
 
 //--------------------------------------------------------
@@ -159,11 +169,11 @@ private:
     float robot_y_;
     float robot_z_;
 
-    bool time_corr{true}, host_sync{true};
+    bool time_corr_{true}, host_sync_{true};
     int64_t timeScaleNum_ {2};
     int64_t timeScaleDenom_ {1};
 
-    int aggregateNframes{38};
+    int aggregateNframes_{38};
 
     bool enable_IMU_publishing_ {false};
     double accel_x_covar_ {0.01};
@@ -173,9 +183,9 @@ private:
     double gyro_y_covar_ {0.000025};
     double gyro_z_covar_ {0.0000001};
 
-    bool frame3d;
+    bool frame3d_;
 
-    bool imu_adjust;
+    bool imu_adjust_;
 
     // calibration override
     // These do not have to be globals

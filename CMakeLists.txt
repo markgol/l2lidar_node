@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(l2lidar_node
-        VERSION 0.3.6
+        VERSION 0.3.7
         LANGUAGES CXX
   )
 

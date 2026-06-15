@@ -19,9 +19,9 @@
 //		This ROS2 package publishes the point cloud data and IMU data
 //		for ROS2 subscribers.
 //
-//		- Publishes:
-//			/l2lidar/points	(sensor_msgs/PointCloud2)
-//			/l2lidar/imu (sensor_msgs/Imu)
+//		- Publishes (default):
+//			/points	(sensor_msgs/PointCloud2)
+//			/imu (sensor_msgs/Imu)
 //			Static TF transform support
 //
 //	Implementation

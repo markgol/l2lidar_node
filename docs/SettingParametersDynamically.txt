@@ -21,4 +21,11 @@ ros2 param set /l2lidar_node calRangeScale 0.000978
 rose param set /l2lidar_node calRangeScale 0.0025
 
 
+To turn OFF rotation of the L2 (standby mode) use the following:
 
+ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: false}"
+
+
+To turn ON rotation of the L2 (run mode) use the following:
+
+ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: true}"

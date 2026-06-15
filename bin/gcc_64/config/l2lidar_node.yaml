@@ -12,6 +12,7 @@ l2lidar_node:
     # both of these bools must be true for aggregation
     enable_l2_time_correction: true
     enable_l2_host_sync: true
+
     # adjust time scale numerator and denominator
     #    2,1 -> 2.0 is the ideal
     # you can adjust to correct for what the
@@ -35,7 +36,7 @@ l2lidar_node:
     robot_y: 0.0
     robot_z: 0.25
 
-    # ---------------- Point Cloud ----------------
+    # ---------------- Point Cloud processing --------------
     frame3d: true
     imu_adjust: false
 
@@ -66,4 +67,12 @@ l2lidar_node:
     # 38 per rotation.  Th precession of the scans fills
     # in between the last rotation scans.
     aggregateNframes: 38
-    
+
+    # ---------------- Topics IDs --------------
+    point_cloud_topic_id: /points
+    imu_topic_id: /imu/data
+
+    # power on state (disables timeout until start service sent)
+    standby_on_powerup_enabled: false
+
+

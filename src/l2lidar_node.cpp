@@ -21,9 +21,9 @@
 //		This ROS2 package publishes the point cloud data and IMU data
 //		for ROS2 subscribers.
 //
-//		- Publishes:
-//			/l2lidar/points	(sensor_msgs/PointCloud2)
-//			/l2lidar/imu (sensor_msgs/Imu)
+//		- Publishes (default):
+//			/points	(sensor_msgs/PointCloud2)
+//			/imu (sensor_msgs/Imu)
 //          /tf_static
 //              base_link -> l2lidar_frame (names set in config file)
 //              l2lidar_frame -> l2lidar_imu (names set in config file)
@@ -97,9 +97,20 @@
 //      V0.3.5  2026-06-03  Added enable/disable of TF publishing of base_link.
 //                          Added config parameters for accel and gyro covariances
 //                          Added initialization of the accel and gyro covariances to the IMU message
+//      V0.3.6  2026-06-12  Changes to CMakeList.txt file to create distribution file (subfolder dist
+//                          in the build folder for platform and build (release or debug).
+//      V0.3.7  2026-06-13  Added config file param for topic IDs for point cloud and imu data.
+//                          Code cleanup. Changing class member variable to end with an underscore to
+//                          idenfity class memebr variables versus local variables.
+//                          Added startup condition to support L2 power on in standby mode.
+//                          This l2lidar_node will not timeout in this case but requires a start service command
+//                          to send a command to the L2 to bring it out of standby.  If the L2 automatically starts
+//                          automatically then the IMU and Point cloud packets woudl still be published but l2lidar_node
+//                          would never timeout.  This is implelemented using the config param standby_on_powerup_enabled
 //
 //      V1.0.0  2026-0x-xx  This will be the first production release.
 //
+//  Note: class member variables end with an _
 //--------------------------------------------------------
 
 //--------------------------------------------------------
@@ -128,20 +139,28 @@
 L2LidarNode::L2LidarNode(int argc, char **argv)
     : Node("l2lidar_node")
 {
-    // --------Declare parameters in config file ----------------
+    // ---------------------------------------------------------
+    // --------Declare parameters in config file ---------------
+
+    // UDP configuration for L2 and host
     declare_parameter<std::string>("l2_ip", "192.168.1.62");
     declare_parameter<int>("l2_port", 6101);
     declare_parameter<std::string>("host_ip", "192.168.1.2");
     declare_parameter<int>("host_port", 6201);
 
+    // timebase correction controls
     declare_parameter<bool>("enable_l2_time_correction", true);
     declare_parameter<bool>("enable_l2_host_sync", true);
+    declare_parameter<int>("l2_sync_rate_ms", 50);
     declare_parameter<int>("timeScaleNum", 2);
     declare_parameter<int>("timeScaleDenom", 1);
-    declare_parameter<int>("l2_sync_rate_ms", 50);
+
+    // UDP latency measurement
+    // normally there would be no need to enable
+    // mostly used as diagnostic
     declare_parameter<bool>("enable_latency_measure", false);
 
-
+    // static transforms
     declare_parameter<bool>("disable_base_link_pub", false);
     declare_parameter<std::string>("frame_id", "l2lidar_frame");
     declare_parameter<std::string>("imu_frame_id", "l2lidar_imu");
@@ -150,17 +169,27 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<float>("robot_y", 0.0);
     declare_parameter<float>("robot_z", 0.0);
 
+    // type of point cloud data expected
     declare_parameter<bool>("frame3d", true);
+
+    // adjust point cloud data using the gravity algined IMU packet pose
+    // This does not correct yaw only roll and pitch
     declare_parameter<bool>("imu_adjust", true);
 
+    // override the L2 internal calibration for RangeScale and RangeBias
     declare_parameter<bool>("EnableCalRangeOVR", false);
     declare_parameter<double>("calRangeScale", 0.000978);
     declare_parameter<double>("calRangeBias", -365.625);
 
-	declare_parameter<int>("watchdog_timeout_ms", 1000);
+    // set the watchdog timer to timeout if no data is received from the L2
+    // for this length of time.  This will cause the node to quit
+    declare_parameter<int>("watchdog_timeout_ms", 35000);
 
+    // number of L2 frames to aggregate when publishing the point cloud data
+    // no aggregation is set to less then 2
     declare_parameter<int>("aggregateNframes", 38);
 
+    // IMU publishing config params
     declare_parameter<bool>("enable_IMU_publishing", true);
     declare_parameter<double>("accel_x_covar", 0.01);
     declare_parameter<double>("accel_y_covar", 0.01);
@@ -169,7 +198,15 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<double>("gyro_y_covar", 0.000025);
     declare_parameter<double>("gyro_z_covar", 0.0000002);
 
-    // get parameters from config file
+    // Topic IDs for publishing
+    declare_parameter<std::string>("point_cloud_topic_id", "/points");
+    declare_parameter<std::string>("imu_topic_id", "/imu/data");
+
+    // disable node timeout if L2 is set for standby on power up
+    declare_parameter<bool>("standby_on_powerup_enabled", false);
+
+    // ---------------------------------------
+    // Now get parameters from config file
 
     // get IDs for publish
     // frame_id_, imu_frame_id_ and robot_id are private class members
@@ -181,7 +218,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     get_parameter("robot_y", robot_y_);
     get_parameter("robot_z", robot_z_);
 
-    // get UDP parameters
+    // get UDP parameters, these are local
     std::string l2_ip, host_ip;
     int l2_port, host_port;
 
@@ -194,8 +231,8 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     bool latency;
     int sync_rate;
 
-    get_parameter("enable_l2_time_correction", time_corr);
-    get_parameter("enable_l2_host_sync", host_sync);
+    get_parameter("enable_l2_time_correction", time_corr_);
+    get_parameter("enable_l2_host_sync", host_sync_);
 
     int timeScaleNum;
     int timeScaleDenom;
@@ -209,8 +246,8 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
 	// get point cloud parameters
 	
-    get_parameter("frame3d", frame3d);
-    get_parameter("imu_adjust", imu_adjust);
+    get_parameter("frame3d", frame3d_);
+    get_parameter("imu_adjust", imu_adjust_);
 
     // get override calibration parameters
     get_parameter("EnableCalRangeOVR", EnableCalRangeOVR_);
@@ -232,7 +269,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     watchdog_timer_.start(500);  // check twice per second
 
     // ---------------- point cloud -------------------
-    get_parameter("aggregateNframes", aggregateNframes);
+    get_parameter("aggregateNframes", aggregateNframes_);
 
     // IMU publishing
     get_parameter("enable_IMU_publishing", enable_IMU_publishing_);
@@ -243,17 +280,38 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     get_parameter("gyro_y_covar", gyro_y_covar_);
     get_parameter("gyro_z_covar", gyro_z_covar_);
 
+    // get UDP parameters, these are local
+    std::string point_cloud_topic_id, imu_topic_id;
+    get_parameter("point_cloud_topic_id", point_cloud_topic_id);
+    get_parameter("imu_topic_id", imu_topic_id);
+
+    // disable node timeout if L2 is set for standby on power up
+    bool standby_on_powerup_enabled;
+    get_parameter("standby_on_powerup_enabled", standby_on_powerup_enabled);
+    // only need to stop the watchdop timer if this is true
+    // watchdog_timer_ will not be started until a start service command is sent
+    if(standby_on_powerup_enabled){
+        watchdog_timer_.stop();
+    }
+
+
+    //---------------------------------------------------
+    // publishing initialization
+
     // This node still needs to process IMU packets from the L2
     // so that rotation correction cn be applied if enabled
     // The IMU publishing is also optional
     if(enable_IMU_publishing_) {
-        imu_pub_ = create_publisher<sensor_msgs::msg::Imu>("/imu/data", rclcpp::SensorDataQoS());
+        imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(imu_topic_id, rclcpp::SensorDataQoS());
     }
 
-    pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/points", rclcpp::SensorDataQoS());
+    pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(point_cloud_topic_id, rclcpp::SensorDataQoS());
 
     tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
     publishStaticTransform();
+
+    //----------------------------------------------------------------------------
+    // L2 initialzation
 
     // initialize UDP addresses and ports for sending and receiving UDP packets
     lidar_.LidarSetCmdConfig(
@@ -261,9 +319,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
         QString::fromStdString(l2_ip), l2_port);
 
     // enable/disable time base corrections to be applied to point cloud and IMU timestamps
-    lidar_.EnableL2TimeCorrection(time_corr);
+    lidar_.EnableL2TimeCorrection(time_corr_);
     // enable/disable host to L2 timebase sync
-    lidar_.EnableL2TSsync(host_sync);
+    lidar_.EnableL2TSsync(host_sync_);
 
     // set the peroidicity of the host to L2 time sync
     lidar_.SetL2TSsyncRate(sync_rate);
@@ -293,9 +351,10 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     RCLCPP_INFO(get_logger(), "L2Lidar node started");
 
+    //----------------------------------------------------------------
     // ---------------- live enable/disable service -------
-    // ~/enable accepts std_srvs/SetBool: true -> start rotation,
-    // false -> enter standby. Also gates the watchdog so a deliberate
+    // ~/enable accepts std_srvs/SetBool: true -> start rotation (run mode),
+    // false -> enter standby mode. Also gates the watchdog so a deliberate
     // stop doesn't fire the no-IMU-data timeout and cause a respawn.
     enable_srv_ = create_service<std_srvs::srv::SetBool>(
         "~/enable",
@@ -458,7 +517,7 @@ void L2LidarNode::onPointCloudReceived()
     last_pc_time_.restart(); // restart watchdog
 
     Frame frame;
-    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d, imu_adjust,
+    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d_, imu_adjust_,
                                          EnableCalRangeOVR_,calRangeScale_,calRangeBias_))
         return;
 
@@ -466,9 +525,9 @@ void L2LidarNode::onPointCloudReceived()
         return;
 
     // aggregate frames if required
-    if(aggregateNframes!=0 && time_corr && host_sync) {
+    if(aggregateNframes_ > 1 && time_corr_ && host_sync_) {
         // restart aggregation once current aggregation is completed
-        if(CurrentAggFrame >= aggregateNframes) {
+        if(CurrentAggFrame >= aggregateNframes_) {
             CurrentAggFrame=0;
             aggframe.clear();
         }
@@ -481,7 +540,7 @@ void L2LidarNode::onPointCloudReceived()
         aggframe += frame;
 
         CurrentAggFrame++;
-        if(CurrentAggFrame < aggregateNframes) {
+        if(CurrentAggFrame < aggregateNframes_) {
             // keep building up aggregated frame
             return;
         }
@@ -644,14 +703,14 @@ rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
     for (const auto &p : params) {
         if (p.get_name() == "imu_adjust") {
             bool flag = p.as_bool();
-            imu_adjust = flag;
+            imu_adjust_ = flag;
         }
         else if (p.get_name() == "aggregateNframes") {
             int nFrames = p.as_int();
             if (nFrames < 0 || nFrames > 4000) {
                 return paramFail("aggregateNframes out of range: 0-4000");
             }
-            aggregateNframes = nFrames;
+            aggregateNframes_ = nFrames;
         }
         else if (p.get_name() == "EnableCalRangeOVR") {
             bool flag = p.as_bool();

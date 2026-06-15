@@ -1,4 +1,4 @@
-You should edit this to match the folder location of the l2lidar.yaml on your system.
+You should edit this to match the folder location of the l2lidar_node on your system.
 Open terminal and change directory to the executable folder.
 Make sure it is executable using:
 	chmod +x l2lidar_node

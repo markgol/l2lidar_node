@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-06-12**
+**updated 2026-06-13**
 ============
 
 Overview
@@ -28,21 +28,25 @@ Features
 
 * Native ROS 2 Jazzy node (C++20)
 
-* Qt 6.10 UDP backend (Core + Network only, no GUI)
+* Qt 6.10 UDP backend (Core + Network only, no GUI, minimal number of shared libraries needed (5)  for porting)
 
 * Publishes:
   
   * `/points` — `sensor_msgs/PointCloud2`
   
   * `/imu/data` — `sensor_msgs/Imu`
+  
+  * static transforms
+    
+    * frame_id -> imu_frame_id (l2 lidar frame -> l2 imu frame)
+    
+    * robot_id -> frame_id (optional, example would be base_link -> l2lidar_frame)
 
-* Deterministic IMU and point cloud synchronization
+* Per-point timestamps supported ( recorded relative to frame time stamp)
 
-* Per-point timestamps supported
+* Host to LiDAR time base synchronization
 
-* Host ↔ LiDAR timebase synchronization
-
-* Static TF transform between LiDAR and IMU frames
+* supports standby startup mode for the L2
 
 * RViz2 visualization support (distance/range coloring)
 
@@ -67,9 +71,9 @@ l2lidar_node
 
         |
 
-        +--> /points      (PointCloud2)
+        +--> /points      (PointCloud2, topic ID set in the config file)
 
-        +--> /imu/data    (Imu)
+        +--> /imu/data    (Imu, topic ID set in the config file)
 
         +--> /tf_static
 
@@ -91,7 +95,7 @@ The exectuable for gcc_arm64(Ubuntu ARM64) has been tested under Ubuntu 24.04 on
 
 These can now run without the installation of Qt.
 
-There is no executable to run under Windows 11 since Windows 11 does not directly support ROS2 at this time.
+There is no executable to run under Windows 11 since Windows 11 does not directly support ROS2 yet.
 
 If you are only going to use the executables they can be found at:
 
@@ -102,11 +106,11 @@ https://github.com/markgol/l2lidar_node/tree/main/executables
 Topics
 ------
 
-| Topic        | Message Type                     | Description                                                   |
-| ------------ | -------------------------------- | ------------------------------------------------------------- |
-| `/points`    | `sensor_msgs/PointCloud2`        | 3D point cloud with intensity, time, and optional range field |
-| `/imu/data`  | `sensor_msgs/Imu`                | Orientation, angular velocity, and linear acceleration        |
-| `/tf_static` | `geometry_msgs/TransformStamped` | Static transform between LiDAR and IMU frames                 |
+| Topic        | Message Type                     | Description                                                                                     |
+| ------------ | -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `/points`    | `sensor_msgs/PointCloud2`        | 3D point cloud with intensity, time, and optional range field                                   |
+| `/imu/data`  | `sensor_msgs/Imu`                | Orientation, angular velocity, and linear acceleration                                          |
+| `/tf_static` | `geometry_msgs/TransformStamped` | Static transform between LiDAR and IMU frames<br/>optional static transform robot base to LiDar |
 
 * * *
 
@@ -129,37 +133,40 @@ ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: true}"
 Parameters
 ----------
 
-| Parameter                   | Type   | Default                            | Description                                                            |
-| --------------------------- | ------ | ---------------------------------- | ---------------------------------------------------------------------- |
-| `l2_ip`                     | string | 192.168.1.62<br/>(factory default) | LiDAR IP address                                                       |
-| `l2_port`                   | int    | 6101<br/>(factory default)         | LiDAR UDP port                                                         |
-| `host_ip`                   | string | 192.168.1.2<br/>(factory default)  | Host IP address                                                        |
-| `host_port`                 | int    | 6201<br/>(factory default)         | Host UDP port                                                          |
-| frame3d                     | bool   | true                               | point cloud data is 3D not 2D                                          |
-| imu_adjust                  | bool   | true                               | Apply IMU pose correction to cloud points before publishing (Dynamic)  |
-| `enable_l2_time_correction` | bool   | `true`                             | Enable LiDAR timestamp correction                                      |
-| `enable_l2_host_sync`       | bool   | `true`                             | Enable host → LiDAR time sync                                          |
-| `l2_sync_rate_ms`           | int    | `50`                               | Sync rate in milliseconds                                              |
-| `enable_latency_measure`    | bool   | `false`                            | Enable latency measurement                                             |
-| disable_base_link_pub       | bool   | false                              | Disbables publishing of the static TF for robot_id -> frame_id if true |
-| `frame_id`                  | string | `l2lidar_frame`                    | Point cloud frame ID                                                   |
-| `imu_frame_id`              | string | `l2lidar_imu`                      | IMU frame ID                                                           |
-| robot_id                    | string | base_link                          | Robot origin frame                                                     |
-| robot_x                     | float  | 0.0                                | x offset from lidar position                                           |
-| robot_y                     | float  | 0.0                                | y offset from lidar position                                           |
-| robot_z                     | float  | 0.0                                | z offset from lidar position                                           |
-| `enable_IMU_publishing`     | bool   | `false`                            | true - publish IMU data                                                |
-| accel_x_covar               | double | 0.01                               | noise variance for x axis accelerometer                                |
-| accel_y_covar               | double | 0.01                               | noise variance for y axis accelerometer                                |
-| accel_z_covar               | double | 0.01                               | noise variance for z axis accelerometer                                |
-| gyro_x_covar                | double | 0.000025                           | noise variance for x axis gyroscope                                    |
-| gyro_y_covar                | double | 0.000025                           | noise variance for y axis gyroscope                                    |
-| gyro_z_covar                | double | 0.0000002                          | noise variance for z axis gyroscope                                    |
-| aggregateNframes            | int    | 38                                 | Number of L2 frames to aggregate for publishing (Dynamic)              |
-| EnableCalRangeOVR           | bool   | false                              | Override internal L2 Range calibration (Dynamic)                       |
-| calRangeScale               | float  | 0.000978                           | Range Scale override value (Dynamic)                                   |
-| calRangeBias                | float  | -365.625                           | Range Bias override value (Dynamic)                                    |
-| watchdog_timeout_ms         | int    | 35000                              | max time without data from L2 in msec                                  |
+| Parameter                   | Type   | Default                            | Description                                                                     |
+| --------------------------- | ------ | ---------------------------------- | ------------------------------------------------------------------------------- |
+| `l2_ip`                     | string | 192.168.1.62<br/>(factory default) | LiDAR IP address                                                                |
+| `l2_port`                   | int    | 6101<br/>(factory default)         | LiDAR UDP port                                                                  |
+| `host_ip`                   | string | 192.168.1.2<br/>(factory default)  | Host IP address                                                                 |
+| `host_port`                 | int    | 6201<br/>(factory default)         | Host UDP port                                                                   |
+| frame3d                     | bool   | true                               | point cloud data is 3D not 2D                                                   |
+| imu_adjust                  | bool   | true                               | Apply IMU pose correction to cloud points before publishing (Dynamic)           |
+| `enable_l2_time_correction` | bool   | `true`                             | Enable LiDAR timestamp correction                                               |
+| `enable_l2_host_sync`       | bool   | `true`                             | Enable host → LiDAR time sync                                                   |
+| `l2_sync_rate_ms`           | int    | `50`                               | Sync rate in milliseconds                                                       |
+| `enable_latency_measure`    | bool   | `false`                            | Enable latency measurement                                                      |
+| disable_base_link_pub       | bool   | false                              | Disbables publishing of the static TF for robot_id -> frame_id if true          |
+| `frame_id`                  | string | `l2lidar_frame`                    | Point cloud frame ID                                                            |
+| `imu_frame_id`              | string | `l2lidar_imu`                      | IMU frame ID                                                                    |
+| robot_id                    | string | base_link                          | Robot origin frame                                                              |
+| robot_x                     | float  | 0.0                                | x offset from lidar position                                                    |
+| robot_y                     | float  | 0.0                                | y offset from lidar position                                                    |
+| robot_z                     | float  | 0.0                                | z offset from lidar position                                                    |
+| `enable_IMU_publishing`     | bool   | `false`                            | true - publish IMU data                                                         |
+| accel_x_covar               | double | 0.01                               | noise variance for x axis accelerometer                                         |
+| accel_y_covar               | double | 0.01                               | noise variance for y axis accelerometer                                         |
+| accel_z_covar               | double | 0.01                               | noise variance for z axis accelerometer                                         |
+| gyro_x_covar                | double | 0.000025                           | noise variance for x axis gyroscope                                             |
+| gyro_y_covar                | double | 0.000025                           | noise variance for y axis gyroscope                                             |
+| gyro_z_covar                | double | 0.0000002                          | noise variance for z axis gyroscope                                             |
+| aggregateNframes            | int    | 38                                 | Number of L2 frames to aggregate for publishing (Dynamic)                       |
+| EnableCalRangeOVR           | bool   | false                              | Override internal L2 Range calibration (Dynamic)                                |
+| calRangeScale               | float  | 0.000978                           | Range Scale override value (Dynamic)                                            |
+| calRangeBias                | float  | -365.625                           | Range Bias override value (Dynamic)                                             |
+| watchdog_timeout_ms         | int    | 35000                              | max time without data from L2 in msec                                           |
+| point_cloud_topic_id        | string | /points                            | Topic ID for point cloud publishing                                             |
+| imu_topic_id                | string | /imu/data                          | Topic IF for IMU publishing                                                     |
+| standby_on_powerup_enabled  | bool   | false                              | Turn off watchdog timer at startup so L2 starting in standy mode won't timeout. |
 
 Parameters indentified as (Dynamic) can be set using ros2 command like:
 
@@ -184,9 +191,9 @@ Build Requirements
 
 * CMake ≥ 3.22
 
-* C++20
+* C++20 or later
 
-* colcon
+* colcon (minimum)
 
 * * *
 
@@ -203,7 +210,7 @@ Ensure ROS is sourced:
 
 * * *
 
-### 2. Install Qt 6.10.2 (optional if using prebuilt exectuable)
+### 2. Install of Qt 6.10.2 (optional if using prebuilt exectuable)
 
 Install Qt 6.10.2 using the Qt Online Installer:
 
@@ -217,7 +224,10 @@ Make sure Qt6 Core and Network modules are installed.
 
 (Edit to match your ROS2 workspace folder and repo source)
 
-`mkdir -p ~/ros2_ws/src cd ~/ros2_ws/srcgit clone <your_repo_url> l2lidar_node`
+```
+mkdir -p ~/ros2_ws/src cd ~/ros2_ws/src
+git clone <your_repo_url> l2lidar_node
+```
 
 * * *
 
@@ -225,25 +235,31 @@ Make sure Qt6 Core and Network modules are installed.
 
 (Edit to match your ROS2 workspace folder)
 
-`cd ~/ros2_ws source /opt/ros/jazzy/setup.bashcolcon build --packages-select l2lidar_node
+```
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select l2lidar_node
+```
 
 Then source:
 
+```
 `source install/setup.bash`
+```
 
 ### 5. Prebuilt exectuables
 
 You still must have ros2 jazzy installed.  This is assuming you are running Ubuntu 24.04.
-There are an install directories:
-install/
-    aarch64 (for the ARM64 or aarch64 hardware platforms such as the Raspberry PI or Nvidia Jetson Orin)
+They are in the excutables directories:
+excutables/
+    gcc_arm64 (for the ARM64 or aarch64 hardware platforms such as the Raspberry PI or Nvidia Jetson Orin)
     gcc_64 (for the x86_64 hardware platforms)
 
-These contain a copy of the executable and required Qt libraries that are needed to run the l2lidar_node app.
+These contain a copy of the executable and required Qt libraries that are needed to run the l2lidar_node app as tar.gz files.
 
-The appropriate folder/subfolders should be copied to your target installation folder.
+They should be extracted to the appropriate folder/subfolders of your target installation folder.
 
-No specific install steps are required.  If you are setting up a bash file to run the node remember to include sourcing the ros2 installation, your DDS if not defaulted, and your ROS domain ID if not defaulted.  This may also already be done in the .bashrc file for the user:
+No specific install steps are required.  If you are setting up a bash file to run the node remember to include sourcing the ros2 installation, your DDS if not defaulted, and your ROS domain ID if not defaulted.  This may also already be done in the .bashrc file for the user and looks like:
 
 ```
 export ROS_DOMAIN_ID=1
@@ -322,7 +338,7 @@ Static transform is published:
 
 The l2lidar_frame --> l2lidar_imu is set in the source to match the Unitree L2 published spec.
 
-The base_lik --> l2lidar_frame is set in the config yaml file and represents the offset from the robot base to the L2 robot location.  The center of the mouting surface of the L2 is 0.0, 0.0, 0.0.  of the lidar data.  It includes the 44.5mm offset from the mounting surface to the lidar scan plane.  This does not corresond to any of the mounting hole.  Note: the mouting holes are offset by 22.5 degrees from the x and y axis origin. 
+The optional base_lik --> l2lidar_frame is set in the config yaml file and represents the offset from the robot base to the L2 robot location.  The center of the mouting surface of the L2 is 0.0, 0.0, 0.0.  of the lidar data.  It includes the 44.5mm offset from the mounting surface to the lidar scan plane.  This does not corresond to any of the mounting hole.  Note: the mouting holes are offset by 22.5 degrees from the x and y axis origins. 
 
 * * *
 
@@ -363,13 +379,13 @@ Run under debugger from QtCreator:
 Known Limitations
 -----------------
 
-* No GUI configuration using .yaml config file (command-line only)
+* The is no GUI, you must use the .yaml configuration file to set parameters
 
 * Static TF only (no dynamic motion TF)
 
-* RViz IMU display plugin is not available in Jazzy; visualization is via TF and point cloud only
+* Note: RViz IMU display plugin is not available in ros2 Jazzy; visualization is via TF and point cloud only
 
-* Requires Qt 6.10 or later due to UDP reliability fixes (Qt 6.4 is not supported). This ionly required if your are compiling and building the app
+* Requires Qt 6.10 or later due to UDP reliability fixes (Qt 6.4 is not supported). This isonly required if your are compiling and building the app
 
 * * *
 
@@ -384,7 +400,7 @@ Design Goals
 
 * No GUI coupling
 
-* High throughput (≈250 Hz IMU, ≈216 Hz point cloud frames)
+* High throughput (≈250 Hz IMU, ≈216 Hz point cloud frames, 30HZ host->L2 timesync)
 
 * Clean shutdown
 
@@ -447,6 +463,8 @@ Added configuration parameters for accelerometer and gyroscopic covariances.
 Added initialization of the accelerometer and gyroscopic covariances for the IMU messages.
 
 **0.3.6** - No changes to the source code.  Changes to the CMakeList.txt file which build a install directory for the distributable app. This change allows the executable disto to be run without the installation of Qt.
+
+**0.3.7** - Code cleanup: renaming l2lidar_node class members variable to end with _ , comments updates. Disable/enable watchdog timeout for supporting L2 startup in standby.  Added topic IDs to be set in the config .yaml file. Documentation cleanup and updated to reflect current operation.  Added the license folder that was lost in V0.3.6.
 
 * * *
 
