@@ -19,6 +19,10 @@
   <depend>tf2_ros</depend>
   <depend>geometry_msgs</depend>
 
+  <!-- Runtime-only deps for the example launches under launch/l2_*_example.launch.py -->
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
   <!-- Qt dependency (generic Qt6, version resolved by CMake) -->
   <build_depend>qt6-base-dev</build_depend>
   <exec_depend>qt6-base-dev</exec_depend>

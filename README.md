@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-06-22**
+**updated 2026-06-23**
 ============
 
 Overview
@@ -470,6 +470,39 @@ Design Goals
 
 * * *
 
+Example URDFs
+-------------
+
+Two trivial example URDFs and matching launch files are shipped under `urdf/examples/` and `launch/` so you can see the L2 mounting pattern end-to-end without bringing your own robot. Both define the same minimal "robot" — a 200 mm × 200 mm × 200 mm base cube with a 100 mm × 100 mm × 100 mm cube on top — and differ only in how the L2 is mounted on the small cube.
+
+| Example | Mount | L2 cloud direction | Use case |
+|---|---|---|---|
+| `l2_top_mount_example.launch.py` | top face of the small cube | world +Z (up) | benchtop tests, overhead-scanning setups, easiest URDF to read |
+| `l2_forward_mount_example.launch.py` | front face of the small cube, cable down | world +X (forward) | typical mobile-robot mounting; same `rpy=(π, -π/2, 0)` convention used by mast-mounted real deployments |
+
+Run either:
+
+```bash
+ros2 launch l2lidar_node l2_top_mount_example.launch.py
+ros2 launch l2lidar_node l2_forward_mount_example.launch.py
+```
+
+Each launch brings up:
+- `robot_state_publisher` with the example URDF
+- `l2lidar_node` with the stock config (factory network defaults)
+- `rviz2` with the `rvizl2lidar_example.rviz` layout (Fixed Frame = `base_link`, so the cube robot sits flat in both variants — only the L2 attachment differs visually). The shipped `rvizl2lidar.rviz` layout (Fixed Frame = `l2lidar_link`) remains the right choice for the no-URDF standalone launch since `l2lidar_link` is the only frame published.
+
+If your L2 isn't on the factory subnet, override the network params from the command line — both example launches accept `l2_ip`, `l2_port`, `host_ip`, `host_port` as launch args:
+
+```bash
+ros2 launch l2lidar_node l2_top_mount_example.launch.py \
+    l2_ip:=10.42.0.62 host_ip:=10.42.0.2
+```
+
+The example URDFs are plain (not xacro), use the bundled L2 mesh from `meshes/l2_lidar.stl`, and are the simplest possible starting point if you're adapting the L2 onto your own URDF. Compare the two files side-by-side to see exactly what changes between mounting orientations — only the `top_to_l2` joint's `<origin>` differs.
+
+* * *
+
 Migration from V0.3.x to V0.5
 -----------------------------
 
@@ -534,7 +567,7 @@ If your V0.3.5+ config had `disable_base_link_pub: true`, you were already takin
 
 * * *
 
-Version
+Versions
 -------
 
 **0.5.0** – Single-frame geometry refactor (breaking change). Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`). Auto-derived IMU frame from `cloud_frame`. Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement. See **Migration from V0.3.x to V0.5** above. Version bumped from prior `0.3.7` (CMakeLists.txt) and `0.2.3` (package.xml) — both unified at `0.5.0`.
