@@ -87,9 +87,7 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        base_link:
-          Value: true
-        l2lidar_frame:
+        l2lidar_link:
           Value: true
         l2lidar_imu:
           Value: true
@@ -99,16 +97,15 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        base_link:
-          l2lidar_frame:
-            l2lidar_imu:
-              {}
+        l2lidar_link:
+          l2lidar_imu:
+            {}
       Update Interval: 0
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: l2lidar_frame
+    Fixed Frame: l2lidar_link
     Frame Rate: 30
   Name: root
   Tools:
