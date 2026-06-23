@@ -27,14 +27,22 @@ l2lidar_node:
     # ---------------- Latency ----------------
     enable_latency_measure: false
 
-    # ---------------- Frames ----------------
-    frame_id: "l2lidar_frame"
-    imu_frame_id: "l2lidar_imu"
-    disable_base_link_pub: false
-    robot_id: "base_link"
-    robot_x: 0.1
-    robot_y: 0.0
-    robot_z: 0.25
+    # ---------------- Frames (V0.5: single-frame topology) ----------------
+    # See README "Coordinate Frames" for the full design rationale.
+    # l2_name:      prefix for default-derived frame names.
+    # cloud_frame:  the L2's primary reference frame — published as
+    #               header.frame_id on /points messages, and what URDF
+    #               (or a static_transform_publisher) should pin to your
+    #               robot. The IMU frame is auto-derived (strip trailing
+    #               "_link" if present, append "_imu").
+    #               Empty string → derive from l2_name as ${l2_name}_link.
+    #               Override for multi-robot namespacing, e.g.
+    #               cloud_frame: "bot1/lidar/l2lidar_link".
+    # publish_tf:   gate emission of the intrinsic cloud → imu static TF.
+    #               Set false if your URDF places the IMU frame directly.
+    l2_name: "l2lidar"
+    cloud_frame: ""
+    publish_tf: true
 
     # ---------------- Point Cloud processing --------------
     frame3d: true

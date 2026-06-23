@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-06-13**
+**updated 2026-06-22**
 ============
 
 Overview
@@ -36,11 +36,7 @@ Features
   
   * `/imu/data` — `sensor_msgs/Imu`
   
-  * static transforms
-    
-    * frame_id -> imu_frame_id (l2 lidar frame -> l2 imu frame)
-    
-    * robot_id -> frame_id (optional, example would be base_link -> l2lidar_frame)
+  * static transform: `cloud_frame -> imu_frame` (intrinsic L2 IMU offset, single hop). URDF or a `static_transform_publisher` owns the extrinsic placement above `cloud_frame`. See Coordinate Frames below.
 
 * Per-point timestamps supported ( recorded relative to frame time stamp)
 
@@ -77,11 +73,7 @@ l2lidar_node
 
         +--> /tf_static
 
-                base_link -> l2lidar_frame (only if enabled, names set in config file)
-
-                l2lidar_frame -> l2lidar_imu (names set in config file)
-
-
+                cloud_frame -> imu_frame (intrinsic L2 IMU offset; gated by publish_tf)
 
 The node uses Qt’s networking and event system for UDP packet reception and ROS 2 publishers for message dissemination. No Qt GUI or ROS GUI dependencies are used.
 
@@ -145,13 +137,9 @@ Parameters
 | `enable_l2_host_sync`       | bool   | `true`                             | Enable host → LiDAR time sync                                                   |
 | `l2_sync_rate_ms`           | int    | `50`                               | Sync rate in milliseconds                                                       |
 | `enable_latency_measure`    | bool   | `false`                            | Enable latency measurement                                                      |
-| disable_base_link_pub       | bool   | false                              | Disbables publishing of the static TF for robot_id -> frame_id if true          |
-| `frame_id`                  | string | `l2lidar_frame`                    | Point cloud frame ID                                                            |
-| `imu_frame_id`              | string | `l2lidar_imu`                      | IMU frame ID                                                                    |
-| robot_id                    | string | base_link                          | Robot origin frame                                                              |
-| robot_x                     | float  | 0.0                                | x offset from lidar position                                                    |
-| robot_y                     | float  | 0.0                                | y offset from lidar position                                                    |
-| robot_z                     | float  | 0.0                                | z offset from lidar position                                                    |
+| `l2_name`                   | string | `l2lidar`                          | Prefix for default-derived frame names                                          |
+| `cloud_frame`               | string | `""` (resolves to `${l2_name}_link`) | Primary reference frame. Published as `header.frame_id` on `/points`, and the URDF / static_transform_publisher pin point for the device. IMU frame is auto-derived (strip trailing `_link` if present, append `_imu`). Override to embed a robot namespace for multi-robot / multi-device deployments. See **Coordinate Frames** below. |
+| `publish_tf`                | bool   | `true`                             | Emit the intrinsic `cloud_frame → imu_frame` static transform. Set `false` when URDF places both frames independently. |
 | `enable_IMU_publishing`     | bool   | `false`                            | true - publish IMU data                                                         |
 | accel_x_covar               | double | 0.01                               | noise variance for x axis accelerometer                                         |
 | accel_y_covar               | double | 0.01                               | noise variance for y axis accelerometer                                         |
@@ -303,11 +291,15 @@ Load the provided configuration:
 
 Recommended settings:
 
-* Fixed Frame: `l2lidar_frame`
+* Fixed Frame: `l2lidar_link`
 
 * PointCloud2:
   
   * Topic: `/points`
+  
+  * **Reliability Policy: `Best Effort`** — the publisher uses `SensorDataQoS`, so a default `Reliable` subscription will not receive any messages. The shipped `rviz/rvizl2lidar.rviz` layout is already configured this way; only relevant if you build a layout from scratch or import a config that defaults to Reliable.
+
+  * You may see a one-shot warning at rviz startup of the form *"New subscription discovered on topic '/points', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY"*. This is a known rviz2 artifact — rviz briefly creates a default-QoS (Reliable) discovery subscription before the saved layout's Best Effort cloud-display subscription takes over. It is benign; once the display is fully loaded the cloud streams normally. The warning is harmless and can be ignored.
   
   * Color Transformer: `Channel`
   
@@ -326,19 +318,89 @@ Recommended settings:
 Coordinate Frames
 -----------------
 
-There are 3 coordinate frames used: imu, lidar, robot
+### Overview
 
-The orientation (x,y,z axis) are the same in all 3 frames.
+The L2 is a **single-frame device**. Its point cloud and IMU streams share a single physical reference: the geometric center of the bottom mounting surface. Per the Unitree SDK documentation (`L2lidarClass/READMore.md`):
 
-Static transform is published:
+> *"The origin of the LiDAR point cloud coordinate system is located at the center of the bottom mounting surface of the LiDAR."*
 
-`l2lidar_frame  -->  l2lidar_imu
+> *"The origin of the IMU coordinate system in the LiDAR point cloud coordinate system is (in meters): [-0.007698, -0.014655, 0.00667]."*
 
-`base_link --> l2lidar_frame
+The driver exposes this directly:
 
-The l2lidar_frame --> l2lidar_imu is set in the source to match the Unitree L2 published spec.
+- **`cloud_frame`** — the L2's primary reference. Published as `header.frame_id` on `/points`. Also where URDF (or a static_transform_publisher) should pin the device onto your robot.
+- **`imu_frame`** — auto-derived from `cloud_frame` (strip trailing `_link` if present, append `_imu`). Published as `header.frame_id` on `/imu/data`. The driver emits one static TF between them with the spec offsets above.
 
-The optional base_lik --> l2lidar_frame is set in the config yaml file and represents the offset from the robot base to the L2 robot location.  The center of the mouting surface of the L2 is 0.0, 0.0, 0.0.  of the lidar data.  It includes the 44.5mm offset from the mounting surface to the lidar scan plane.  This does not corresond to any of the mounting hole.  Note: the mouting holes are offset by 22.5 degrees from the x and y axis origins. 
+This collapses to a single user-visible frame name (`cloud_frame`) — same approach as `velodyne_pointcloud` and `livox_ros_driver2`, which also have no mount-to-cloud offset. (`realsense_ros` and `ouster_ros` use multiple frames because their devices have non-zero optical-to-mount offsets.)
+
+### Physical positioning
+
+The cloud frame origin is the **geometric center of the bottom base plate** — not at any of the four mounting holes. The mounting holes form a square pattern inscribed in a Ø51 mm circle centered on the base, rotated 22.5° from the cable-exit axis. The +Z axis is perpendicular to the bottom surface, pointing away from it (toward where the L2 scans). +X is opposite the cable exit; +Y completes the right-hand rule.
+
+### Frame naming and resolution
+
+`cloud_frame` defaults to empty string. At startup the node resolves it:
+
+- If empty: `cloud_frame = ${l2_name}_link` (default: `l2lidar_link`)
+- If set: that exact value wins
+
+`imu_frame` is always derived from the resolved `cloud_frame`:
+
+| `cloud_frame`                       | derived `imu_frame`                |
+|-------------------------------------|------------------------------------|
+| `l2lidar_link` (default)            | `l2lidar_imu`                      |
+| `front_lidar_link`                  | `front_lidar_imu`                  |
+| `bot1/lidar/l2lidar_link`          | `bot1/lidar/l2lidar_imu`          |
+| `my_lidar` (no `_link` suffix)      | `my_lidar_imu`                     |
+
+The `_link` suffix follows REP-105 / standard ROS convention for a device's physical-attachment reference frame.
+
+### URDF integration
+
+**Typical case (full URDF on the host platform)**:
+
+```xml
+<link name="l2lidar_link"/>
+
+<joint name="l2lidar_joint" type="fixed">
+  <parent link="base_link"/>
+  <child link="l2lidar_link"/>
+  <origin xyz="0.025 0 0.34" rpy="3.14159 -1.5708 0"/>
+</joint>
+```
+
+Launch the node with defaults; URDF owns the extrinsic placement, the node emits the intrinsic cloud→imu TF. Resulting TF tree:
+
+```
+base_link
+ └── l2lidar_link            (URDF — also the cloud frame, per Unitree spec)
+      └── l2lidar_imu        (node — intrinsic offset, hardcoded per Unitree spec)
+```
+
+**Without URDF** (single-sensor setup or simple integration): use a one-line `static_transform_publisher`:
+
+```
+ros2 run tf2_ros static_transform_publisher \
+  --x 0.025 --y 0 --z 0.34 --roll 3.14159 --pitch -1.5708 --yaw 0 \
+  --frame-id base_link --child-frame-id l2lidar_link
+```
+
+Same TF tree, no URDF needed.
+
+### Multi-robot / multi-device frame isolation
+
+When multiple robots share a TF graph, the default frame names would collide between robots. Override `cloud_frame` to embed a robot-namespace prefix:
+
+```yaml
+cloud_frame: "bot1/lidar/l2lidar_link"
+# imu_frame auto-derives as "bot1/lidar/l2lidar_imu"
+```
+
+A second robot would set `cloud_frame: "bot2/lidar/l2lidar_link"` and the two graphs coexist without collision. The same pattern works for multiple L2s on a single robot (`front_l2_link` / `rear_l2_link`).
+
+### Suppressing the TF emission
+
+If the host's URDF places the IMU frame directly (e.g., with its own intrinsic offset characterization), set `publish_tf: false` to suppress the node's emission. The PointCloud2 and IMU `header.frame_id` fields are still written normally; only the static TF broadcast is suppressed.
 
 * * *
 
@@ -408,8 +470,74 @@ Design Goals
 
 * * *
 
+Migration from V0.3.x to V0.5
+-----------------------------
+
+V0.5 simplifies the static-TF surface and aligns the parameter naming with ROS conventions used by `realsense_ros`, `ouster_ros`, `livox_ros_driver2`, and `velodyne_pointcloud`. Seven legacy parameters are replaced with three new ones; the node now emits a single intrinsic static TF instead of two. URDF (or a single static_transform_publisher) takes ownership of the extrinsic placement.
+
+### What changed at the parameter surface
+
+| Removed (V0.3.x)        | Replacement (V0.5)                                                                              |
+|-------------------------|-------------------------------------------------------------------------------------------------|
+| `robot_id`              | URDF (or a `static_transform_publisher`) owns the parent of `cloud_frame`                        |
+| `robot_x`               | URDF / STF                                                                                       |
+| `robot_y`               | URDF / STF                                                                                       |
+| `robot_z`               | URDF / STF                                                                                       |
+| `frame_id`              | `cloud_frame` (semantically equivalent, different default name)                                  |
+| `imu_frame_id`          | no replacement — auto-derived from `cloud_frame` (strip trailing `_link`, append `_imu`)          |
+| `disable_base_link_pub` | no replacement — the TF it gated is no longer emitted at all                                     |
+
+### Step-by-step recipe (existing V0.3.x users)
+
+1. **Edit YAML**: replace the seven legacy params with `l2_name` / `cloud_frame` / `publish_tf`. In most cases you only need `l2_name` if the default name (`l2lidar`) doesn't suit, or you can leave all three at defaults.
+
+2. **Declare a URDF link** named `<your_l2_name>_link` (or whatever you set `cloud_frame` to), pinned at the position + rotation that matches your previous `robot_x/y/z` and orientation. If you don't have a URDF, use a single `static_transform_publisher` instead (one CLI line — see Coordinate Frames above).
+
+3. **Topics are unchanged**. Anything subscribing to `/points` or `/imu/data` keeps working without modification — only `header.frame_id` values change, and only if your old `frame_id` / `imu_frame_id` weren't already `l2lidar_link` / `l2lidar_imu`.
+
+### Worked example
+
+A V0.3.x config that placed the L2 25 cm above and 10 cm forward of `base_link`:
+
+```yaml
+# V0.3.x (before)
+frame_id: "lidar3d"
+imu_frame_id: "lidar3d_imu"
+robot_id: "base_link"
+robot_x: 0.10
+robot_y: 0.00
+robot_z: 0.25
+```
+
+Migrates to:
+
+```yaml
+# V0.5 (after)
+l2_name: "lidar3d"     # or leave default "l2lidar"
+cloud_frame: ""        # resolves to "lidar3d_link"
+publish_tf: true
+```
+
+Plus, in your URDF (or as a one-line `static_transform_publisher`):
+
+```xml
+<joint name="lidar3d_joint" type="fixed">
+  <parent link="base_link"/>
+  <child link="lidar3d_link"/>
+  <origin xyz="0.10 0 0.25" rpy="0 0 0"/>
+</joint>
+```
+
+### `disable_base_link_pub` users
+
+If your V0.3.5+ config had `disable_base_link_pub: true`, you were already taking ownership of the static TF in your URDF. Under V0.5, this is the only mode the driver supports — the flag is gone because the TF it gated is no longer emitted at all. Migration is the same as above; you can just delete the `disable_base_link_pub` line from your YAML.
+
+* * *
+
 Version
 -------
+
+**0.5.0** – Single-frame geometry refactor (breaking change). Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`). Auto-derived IMU frame from `cloud_frame`. Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement. See **Migration from V0.3.x to V0.5** above. Version bumped from prior `0.3.7` (CMakeLists.txt) and `0.2.3` (package.xml) — both unified at `0.5.0`.
 
 **0.1.0** – Initial functional driver with synchronized IMU and point cloud publishing.  This is only the intial release and does not include a prebuilt executable.  That is planned for the 0.2.0 release
 

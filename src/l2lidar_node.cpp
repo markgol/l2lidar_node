@@ -25,8 +25,11 @@
 //			/points	(sensor_msgs/PointCloud2)
 //			/imu (sensor_msgs/Imu)
 //          /tf_static
-//              base_link -> l2lidar_frame (names set in config file)
-//              l2lidar_frame -> l2lidar_imu (names set in config file)
+//              cloud_frame -> imu_frame  (intrinsic L2 IMU offset; gated
+//                                         by publish_tf. cloud_frame and
+//                                         imu_frame default to l2lidar_link
+//                                         and l2lidar_imu — see README
+//                                         Coordinate Frames.)
 //
 //	Implementation
 //		This is the ROS2 driver for the Unitree L2 4d LiDAR.
@@ -160,14 +163,18 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     // mostly used as diagnostic
     declare_parameter<bool>("enable_latency_measure", false);
 
-    // static transforms
-    declare_parameter<bool>("disable_base_link_pub", false);
-    declare_parameter<std::string>("frame_id", "l2lidar_frame");
-    declare_parameter<std::string>("imu_frame_id", "l2lidar_imu");
-    declare_parameter<std::string>("robot_id", "base_link");
-    declare_parameter<float>("robot_x", 0.0);
-    declare_parameter<float>("robot_y", 0.0);
-    declare_parameter<float>("robot_z", 0.0);
+    // V0.5: single-frame topology. cloud_frame serves as both the URDF
+    // mounting reference and the cloud-data origin (per Unitree spec,
+    // these are the same physical frame — see README "Coordinate Frames").
+    // Default cloud_frame is empty as a sentinel for "derive from l2_name":
+    //   leave both defaults     → cloud_frame = "l2lidar_link"
+    //   set l2_name=front_lidar → cloud_frame = "front_lidar_link"
+    //   set cloud_frame=<X>     → that exact value wins (for multi-robot
+    //                              namespacing, e.g. "bot1/lidar/l2lidar_link")
+    // imu_frame is auto-derived from cloud_frame at startup.
+    declare_parameter<std::string>("l2_name", "l2lidar");
+    declare_parameter<std::string>("cloud_frame", "");
+    declare_parameter<bool>("publish_tf", true);
 
     // type of point cloud data expected
     declare_parameter<bool>("frame3d", true);
@@ -208,15 +215,36 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     // ---------------------------------------
     // Now get parameters from config file
 
-    // get IDs for publish
-    // frame_id_, imu_frame_id_ and robot_id are private class members
-    get_parameter("disable_base_link_pub", disable_base_link_pub_);
-    get_parameter("frame_id", frame_id_);
-    get_parameter("imu_frame_id", imu_frame_id_);
-    get_parameter("robot_id", robot_id_);
-    get_parameter("robot_x", robot_x_);
-    get_parameter("robot_y", robot_y_);
-    get_parameter("robot_z", robot_z_);
+    // Load frame-design params and resolve cloud_frame_ + imu_frame_
+    get_parameter("l2_name", l2_name_);
+    get_parameter("cloud_frame", cloud_frame_);
+    get_parameter("publish_tf", publish_tf_);
+
+    // Default-resolution: if cloud_frame is left empty, derive from l2_name.
+    if (cloud_frame_.empty()) {
+        cloud_frame_ = l2_name_ + "_link";
+    }
+
+    // Derive imu_frame from cloud_frame: strip trailing "_link" if present,
+    // then append "_imu". Examples:
+    //   "l2lidar_link"            → "l2lidar_imu"
+    //   "bot1/lidar/l2lidar_link" → "bot1/lidar/l2lidar_imu"
+    //   "my_lidar"                → "my_lidar_imu"
+    static constexpr std::string_view kLinkSuffix = "_link";
+    if (cloud_frame_.size() >= kLinkSuffix.size() &&
+        cloud_frame_.compare(
+            cloud_frame_.size() - kLinkSuffix.size(),
+            kLinkSuffix.size(), kLinkSuffix) == 0) {
+        imu_frame_ = cloud_frame_.substr(
+            0, cloud_frame_.size() - kLinkSuffix.size()) + "_imu";
+    } else {
+        imu_frame_ = cloud_frame_ + "_imu";
+    }
+
+    RCLCPP_INFO(get_logger(),
+        "Frame topology: cloud_frame='%s', imu_frame='%s', publish_tf=%s",
+        cloud_frame_.c_str(), imu_frame_.c_str(),
+        publish_tf_ ? "true" : "false");
 
     // get UDP parameters, these are local
     std::string l2_ip, host_ip;
@@ -472,7 +500,7 @@ void L2LidarNode::onImuReceived()
     // time stamp comes from IMU packet not system using now()
     msg.header.stamp.sec = imu_packet.data.info.stamp.sec;
     msg.header.stamp.nanosec = imu_packet.data.info.stamp.nsec;
-    msg.header.frame_id = imu_frame_id_;
+    msg.header.frame_id = imu_frame_;
 
     // Correct order of quaternion array
     msg.orientation.w = imu_packet.data.quaternion[0];
@@ -552,7 +580,7 @@ void L2LidarNode::onPointCloudReceived()
 
 
     sensor_msgs::msg::PointCloud2 cloud;
-    cloud.header.frame_id = frame_id_;
+    cloud.header.frame_id = cloud_frame_;
 
     // Use first point timestamp as frame timestamp
     long long t0 = starttime;
@@ -638,45 +666,29 @@ void L2LidarNode::onPointCloudReceived()
 
 //---------------------------------------------------------------------
 // publishStaticTransform
-// there are 2 static transfoms published
-//      base_link -> l2lidar_frame
-//      l2lidar_frame -> l2lidar_imu
+// V0.5: emits a single intrinsic static TF: cloud_frame_ -> imu_frame_.
+// Translation values are the L2's documented IMU offset relative to the
+// cloud origin (Unitree SDK READMore.md line 26):
+//      [-0.007698, -0.014655, 0.00667] meters, identity rotation.
+// URDF / static_transform_publisher owns the extrinsic placement of
+// cloud_frame_ on the robot. publish_tf_ gates this emission so a user
+// whose URDF handles the IMU placement independently can suppress it.
 //---------------------------------------------------------------------
 void L2LidarNode::publishStaticTransform()
 {
-    // This is the transform from base_link to l2lidar_drame
-    if(!disable_base_link_pub_) {
-        geometry_msgs::msg::TransformStamped tf_lidar;
-
-        tf_lidar.header.stamp = this->get_clock()->now();
-        tf_lidar.header.frame_id = robot_id_;   // "base_link"
-        tf_lidar.child_frame_id = frame_id_;    // "l2lidar_frame"
-
-        tf_lidar.transform.translation.x = robot_x_;
-        tf_lidar.transform.translation.y =robot_y_;
-        tf_lidar.transform.translation.z = robot_z_;
-
-        // lidar rotation matches robot rotation
-        tf_lidar.transform.rotation.x = 0.0;
-        tf_lidar.transform.rotation.y = 0.0;
-        tf_lidar.transform.rotation.z = 0.0;
-        tf_lidar.transform.rotation.w = 1.0;
-
-        tf_broadcaster_->sendTransform(tf_lidar);
-
-        RCLCPP_INFO(get_logger(), "Published static TF: %s -> %s",
-                    robot_id_.c_str(), frame_id_.c_str());
+    if (!publish_tf_) {
+        RCLCPP_INFO(get_logger(),
+            "publish_tf=false; not emitting cloud_frame -> imu_frame TF");
+        return;
     }
-
-    // This is the transform from l2lidar_frame to the imu_frame
 
     geometry_msgs::msg::TransformStamped tf_msg;
 
     tf_msg.header.stamp = this->get_clock()->now();
-    tf_msg.header.frame_id = frame_id_;      // "l2lidar_frame"
-    tf_msg.child_frame_id = imu_frame_id_;   // "l2lidar_imu"
+    tf_msg.header.frame_id = cloud_frame_;
+    tf_msg.child_frame_id = imu_frame_;
 
-    // adjusted to known L2 translation relative to l2lidar_frame
+    // L2 IMU origin in the cloud coordinate system, per Unitree spec.
     tf_msg.transform.translation.x = -0.007698;
     tf_msg.transform.translation.y = -0.014655;
     tf_msg.transform.translation.z = 0.00667;
@@ -689,7 +701,7 @@ void L2LidarNode::publishStaticTransform()
     tf_broadcaster_->sendTransform(tf_msg);
 
     RCLCPP_INFO(get_logger(), "Published static TF: %s -> %s",
-                frame_id_.c_str(), imu_frame_id_.c_str());
+                cloud_frame_.c_str(), imu_frame_.c_str());
 }
 
 

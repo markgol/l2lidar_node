@@ -161,13 +161,16 @@ private:
     // deliberate stop doesn't trigger a respawn loop.
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 
-    bool disable_base_link_pub_ {false};
-    std::string frame_id_; // lidar sensor frame
-    std::string imu_frame_id_; // imu sensor frame
-    std::string robot_id_; // robot frame
-    float robot_x_;
-    float robot_y_;
-    float robot_z_;
+    // V0.5: single-frame topology — see README "Coordinate Frames".
+    // cloud_frame_ is the L2's primary reference, where URDF should pin the
+    // device, and what published PointCloud2 / IMU messages name in their
+    // header.frame_id. imu_frame_ is auto-derived from cloud_frame_ at
+    // startup (strip trailing "_link" if present, append "_imu"). publish_tf_
+    // gates emission of the intrinsic cloud_frame_ → imu_frame_ static TF.
+    std::string l2_name_; // prefix for default-derived frame names
+    std::string cloud_frame_; // primary reference frame, also published PointCloud2 frame_id
+    std::string imu_frame_; // derived from cloud_frame_; published IMU frame_id
+    bool publish_tf_ {true};
 
     bool time_corr_{true}, host_sync_{true};
     int64_t timeScaleNum_ {2};
