@@ -12,6 +12,10 @@ l2lidar_node:
     # both of these bools must be true for aggregation
     enable_l2_time_correction: true
     enable_l2_host_sync: true
+
+    # Use system time stamp for packet timestamps
+    UseSystemTimeTS: false
+
     # adjust time scale numerator and denominator
     #    2,1 -> 2.0 is the ideal
     # you can adjust to correct for what the
@@ -34,18 +38,19 @@ l2lidar_node:
     #               (or a static_transform_publisher) should pin to your
     #               robot. The IMU frame is auto-derived (strip trailing
     #               "_link" if present, append "_imu").
-    #               Empty string → derive from l2_name as ${l2_name}_link.
+    #               Empty string -> derive from l2_name as ${l2_name}_link.
     #               Override for multi-robot namespacing, e.g.
     #               cloud_frame: "bot1/lidar/l2lidar_link".
-    # publish_tf:   gate emission of the intrinsic cloud → imu static TF.
+    # publish_tf:   gate emission of the intrinsic cloud -> imu static TF.
     #               Set false if your URDF places the IMU frame directly.
     l2_name: "l2lidar"
     cloud_frame: ""
     publish_tf: true
 
-    # ---------------- Point Cloud ----------------
+    # ---------------- Point Cloud processing --------------
     frame3d: true
     imu_adjust: false
+    imuRollPitchOnly: true
 
     # ---------------- Calibration Override ----------------
     EnableCalRangeOVR: true
@@ -66,6 +71,9 @@ l2lidar_node:
     gyro_x_covar: 0.000025 # std dev .005 -> variance 0.000025
     gyro_y_covar: 0.000026 # std dev .005 -> variance 0.000025
     gyro_z_covar: 0.0000002 # std dev .0001 use variance 0.0000002
+    roll_covar: 4.9e-9 # std dev .004 deg -> variance 5.0e-9 radians
+    pitch_covar: 4.9e-9 # std dev .004 deg -> variance  5.0e-9 radians
+    yaw_covar: 10.0 # std dev 0.0 but yaw is not reliable because of drift
 
     # ---------------- point cloud frames ----------------
     # If this is set to 0 there is no aggregation
@@ -74,4 +82,12 @@ l2lidar_node:
     # 38 per rotation.  Th precession of the scans fills
     # in between the last rotation scans.
     aggregateNframes: 38
-    
+
+    # ---------------- Topics IDs --------------
+    point_cloud_topic_id: /points
+    imu_topic_id: /imu/data
+
+    # power on state (disables timeout until start service sent)
+    standby_on_powerup_enabled: false
+
+

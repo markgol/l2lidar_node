@@ -72,7 +72,6 @@ l2lidar_node
         +--> /imu/data    (Imu, topic ID set in the config file)
 
         +--> /tf_static
-
                 cloud_frame -> imu_frame (intrinsic L2 IMU offset; gated by publish_tf)
 
 The node uses Qt’s networking and event system for UDP packet reception and ROS 2 publishers for message dissemination. No Qt GUI or ROS GUI dependencies are used.
@@ -125,43 +124,53 @@ ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: true}"
 Parameters
 ----------
 
-| Parameter                   | Type   | Default                            | Description                                                                     |
-| --------------------------- | ------ | ---------------------------------- | ------------------------------------------------------------------------------- |
-| `l2_ip`                     | string | 192.168.1.62<br/>(factory default) | LiDAR IP address                                                                |
-| `l2_port`                   | int    | 6101<br/>(factory default)         | LiDAR UDP port                                                                  |
-| `host_ip`                   | string | 192.168.1.2<br/>(factory default)  | Host IP address                                                                 |
-| `host_port`                 | int    | 6201<br/>(factory default)         | Host UDP port                                                                   |
-| frame3d                     | bool   | true                               | point cloud data is 3D not 2D                                                   |
-| imu_adjust                  | bool   | true                               | Apply IMU pose correction to cloud points before publishing (Dynamic)           |
-| `enable_l2_time_correction` | bool   | `true`                             | Enable LiDAR timestamp correction                                               |
-| `enable_l2_host_sync`       | bool   | `true`                             | Enable host → LiDAR time sync                                                   |
-| `l2_sync_rate_ms`           | int    | `50`                               | Sync rate in milliseconds                                                       |
-| `enable_latency_measure`    | bool   | `false`                            | Enable latency measurement                                                      |
-| `l2_name`                   | string | `l2lidar`                          | Prefix for default-derived frame names                                          |
+| Parameter                   | Type   | Default                              | Description                                                                                                                                                                                                                                                                                                                              |
+| --------------------------- | ------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `l2_ip`                     | string | 192.168.1.62<br/>(factory default)   | LiDAR IP address                                                                                                                                                                                                                                                                                                                         |
+| `l2_port`                   | int    | 6101<br/>(factory default)           | LiDAR UDP port                                                                                                                                                                                                                                                                                                                           |
+| `host_ip`                   | string | 192.168.1.2<br/>(factory default)    | Host IP address                                                                                                                                                                                                                                                                                                                          |
+| `host_port`                 | int    | 6201<br/>(factory default)           | Host UDP port                                                                                                                                                                                                                                                                                                                            |
+| frame3d                     | bool   | true                                 | point cloud data is 3D not 2D                                                                                                                                                                                                                                                                                                            |
+| imu_adjust                  | bool   | true                                 | Apply IMU pose correction to cloud points before publishing (Dynamic)                                                                                                                                                                                                                                                                    |
+| imuRollPitchOnly            | bool   | true                                 | restirct pose correction to roll, pitch only (yaw=0.0) (Dynamic)                                                                                                                                                                                                                                                                         |
+| `enable_l2_time_correction` | bool   | `true`                               | Enable LiDAR timestamp correction                                                                                                                                                                                                                                                                                                        |
+| `enable_l2_host_sync`       | bool   | `true`                               | Enable host → LiDAR time sync                                                                                                                                                                                                                                                                                                            |
+| `l2_sync_rate_ms`           | int    | `50`                                 | Sync rate in milliseconds                                                                                                                                                                                                                                                                                                                |
+| timeScaleNum                | int64  | 2                                    | numerator for time correction scalar                                                                                                                                                                                                                                                                                                     |
+| timeScaleDenom              | int64  | 1                                    | denominator for time correction scalar                                                                                                                                                                                                                                                                                                   |
+| UseSystemTimeTS             | bool   | false                                | Replace IMU and point cloud timestamp with system now timestamp (Dynamic)                                                                                                                                                                                                                                                                |
+| `enable_latency_measure`    | bool   | `false`                              | Enable latency measurement                                                                                                                                                                                                                                                                                                               |
+| `l2_name`                   | string | `l2lidar`                            | Prefix for default-derived frame names                                                                                                                                                                                                                                                                                                   |
 | `cloud_frame`               | string | `""` (resolves to `${l2_name}_link`) | Primary reference frame. Published as `header.frame_id` on `/points`, and the URDF / static_transform_publisher pin point for the device. IMU frame is auto-derived (strip trailing `_link` if present, append `_imu`). Override to embed a robot namespace for multi-robot / multi-device deployments. See **Coordinate Frames** below. |
-| `publish_tf`                | bool   | `true`                             | Emit the intrinsic `cloud_frame → imu_frame` static transform. Set `false` when URDF places both frames independently. |
-| `enable_IMU_publishing`     | bool   | `false`                            | true - publish IMU data                                                         |
-| accel_x_covar               | double | 0.01                               | noise variance for x axis accelerometer                                         |
-| accel_y_covar               | double | 0.01                               | noise variance for y axis accelerometer                                         |
-| accel_z_covar               | double | 0.01                               | noise variance for z axis accelerometer                                         |
-| gyro_x_covar                | double | 0.000025                           | noise variance for x axis gyroscope                                             |
-| gyro_y_covar                | double | 0.000025                           | noise variance for y axis gyroscope                                             |
-| gyro_z_covar                | double | 0.0000002                          | noise variance for z axis gyroscope                                             |
-| aggregateNframes            | int    | 38                                 | Number of L2 frames to aggregate for publishing (Dynamic)                       |
-| EnableCalRangeOVR           | bool   | false                              | Override internal L2 Range calibration (Dynamic)                                |
-| calRangeScale               | float  | 0.000978                           | Range Scale override value (Dynamic)                                            |
-| calRangeBias                | float  | -365.625                           | Range Bias override value (Dynamic)                                             |
-| watchdog_timeout_ms         | int    | 35000                              | max time without data from L2 in msec                                           |
-| point_cloud_topic_id        | string | /points                            | Topic ID for point cloud publishing                                             |
-| imu_topic_id                | string | /imu/data                          | Topic IF for IMU publishing                                                     |
-| standby_on_powerup_enabled  | bool   | false                              | Turn off watchdog timer at startup so L2 starting in standy mode won't timeout. |
+| `publish_tf`                | bool   | `true`                               | Emit the intrinsic `cloud_frame → imu_frame` static transform. Set `false` when URDF places both frames independently.                                                                                                                                                                                                                   |
+| `enable_IMU_publishing`     | bool   | `false`                              | true - publish IMU data                                                                                                                                                                                                                                                                                                                  |
+| accel_x_covar               | double | 0.01                                 | noise variance for x axis accelerometer                                                                                                                                                                                                                                                                                                  |
+| accel_y_covar               | double | 0.01                                 | noise variance for y axis accelerometer                                                                                                                                                                                                                                                                                                  |
+| accel_z_covar               | double | 0.01                                 | noise variance for z axis accelerometer                                                                                                                                                                                                                                                                                                  |
+| gyro_x_covar                | double | 0.000025                             | noise variance for x axis gyroscope                                                                                                                                                                                                                                                                                                      |
+| gyro_y_covar                | double | 0.000025                             | noise variance for y axis gyroscope                                                                                                                                                                                                                                                                                                      |
+| gyro_z_covar                | double | 0.0000002                            | noise variance for z axis gyroscope                                                                                                                                                                                                                                                                                                      |
+| roll_covar                  | double | 4.9e-9                               | variance for roll (from quaternion pose)                                                                                                                                                                                                                                                                                                 |
+| pitch_covar                 | double | 4.9e-9                               | variance for pitch (from quaternion pose)                                                                                                                                                                                                                                                                                                |
+| yaw_covar                   | double | 10                                   | variance for yaw (from quaternion pose)                                                                                                                                                                                                                                                                                                  |
+| aggregateNframes            | int    | 38                                   | Number of L2 frames to aggregate for publishing (Dynamic)                                                                                                                                                                                                                                                                                |
+| EnableCalRangeOVR           | bool   | false                                | Override internal L2 Range calibration (Dynamic)                                                                                                                                                                                                                                                                                         |
+| calRangeScale               | float  | 0.000978                             | Range Scale override value (Dynamic)                                                                                                                                                                                                                                                                                                     |
+| calRangeBias                | float  | -365.625                             | Range Bias override value (Dynamic)                                                                                                                                                                                                                                                                                                      |
+| watchdog_timeout_ms         | int    | 35000                                | max time without data from L2 in msec                                                                                                                                                                                                                                                                                                    |
+| point_cloud_topic_id        | string | /points                              | Topic ID for point cloud publishing                                                                                                                                                                                                                                                                                                      |
+| imu_topic_id                | string | /imu/data                            | Topic IF for IMU publishing                                                                                                                                                                                                                                                                                                              |
+| standby_on_powerup_enabled  | bool   | false                                | Turn off watchdog timer at startup so L2 starting in standy mode won't timeout.                                                                                                                                                                                                                                                          |
 
 Parameters indentified as (Dynamic) can be set using ros2 command like:
 
 ```
 ros2 param set l2lidar_node EnableCalRangeOVR true
 ros2 param set l2lidar_node calRangeBias -525.5
+ros2 param set l2lidar_node calRangeScale 0.000989
 ros2 param set l2lidar_node imu_adjust false
+ros2 param set l2lidar_node imuRollPitchOnly true
+ros2 param set l2lidar_node UseSystemTimeTS false
 ```
 
 Note: realtime overrides of parameters are not persistent. If you want persistence you need to change the config yaml file.
@@ -298,7 +307,7 @@ Recommended settings:
   * Topic: `/points`
   
   * **Reliability Policy: `Best Effort`** — the publisher uses `SensorDataQoS`, so a default `Reliable` subscription will not receive any messages. The shipped `rviz/rvizl2lidar.rviz` layout is already configured this way; only relevant if you build a layout from scratch or import a config that defaults to Reliable.
-
+  
   * You may see a one-shot warning at rviz startup of the form *"New subscription discovered on topic '/points', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY"*. This is a known rviz2 artifact — rviz briefly creates a default-QoS (Reliable) discovery subscription before the saved layout's Best Effort cloud-display subscription takes over. It is benign; once the display is fully loaded the cloud streams normally. The warning is harmless and can be ignored.
   
   * Color Transformer: `Channel`
@@ -346,12 +355,12 @@ The cloud frame origin is the **geometric center of the bottom base plate** — 
 
 `imu_frame` is always derived from the resolved `cloud_frame`:
 
-| `cloud_frame`                       | derived `imu_frame`                |
-|-------------------------------------|------------------------------------|
-| `l2lidar_link` (default)            | `l2lidar_imu`                      |
-| `front_lidar_link`                  | `front_lidar_imu`                  |
-| `bot1/lidar/l2lidar_link`          | `bot1/lidar/l2lidar_imu`          |
-| `my_lidar` (no `_link` suffix)      | `my_lidar_imu`                     |
+| `cloud_frame`                  | derived `imu_frame`      |
+| ------------------------------ | ------------------------ |
+| `l2lidar_link` (default)       | `l2lidar_imu`            |
+| `front_lidar_link`             | `front_lidar_imu`        |
+| `bot1/lidar/l2lidar_link`      | `bot1/lidar/l2lidar_imu` |
+| `my_lidar` (no `_link` suffix) | `my_lidar_imu`           |
 
 The `_link` suffix follows REP-105 / standard ROS convention for a device's physical-attachment reference frame.
 
@@ -475,9 +484,9 @@ Example URDFs
 
 Two trivial example URDFs and matching launch files are shipped under `urdf/examples/` and `launch/` so you can see the L2 mounting pattern end-to-end without bringing your own robot. Both define the same minimal "robot" — a 200 mm × 200 mm × 200 mm base cube with a 100 mm × 100 mm × 100 mm cube on top — and differ only in how the L2 is mounted on the small cube.
 
-| Example | Mount | L2 cloud direction | Use case |
-|---|---|---|---|
-| `l2_top_mount_example.launch.py` | top face of the small cube | world +Z (up) | benchtop tests, overhead-scanning setups, easiest URDF to read |
+| Example                              | Mount                                    | L2 cloud direction | Use case                                                                                                |
+| ------------------------------------ | ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `l2_top_mount_example.launch.py`     | top face of the small cube               | world +Z (up)      | benchtop tests, overhead-scanning setups, easiest URDF to read                                          |
 | `l2_forward_mount_example.launch.py` | front face of the small cube, cable down | world +X (forward) | typical mobile-robot mounting; same `rpy=(π, -π/2, 0)` convention used by mast-mounted real deployments |
 
 Run either:
@@ -488,6 +497,7 @@ ros2 launch l2lidar_node l2_forward_mount_example.launch.py
 ```
 
 Each launch brings up:
+
 - `robot_state_publisher` with the example URDF
 - `l2lidar_node` with the stock config (factory network defaults)
 - `rviz2` with the `rvizl2lidar_example.rviz` layout (Fixed Frame = `base_link`, so the cube robot sits flat in both variants — only the L2 attachment differs visually). The shipped `rvizl2lidar.rviz` layout (Fixed Frame = `l2lidar_link`) remains the right choice for the no-URDF standalone launch since `l2lidar_link` is the only frame published.
@@ -510,15 +520,15 @@ V0.5 simplifies the static-TF surface and aligns the parameter naming with ROS c
 
 ### What changed at the parameter surface
 
-| Removed (V0.3.x)        | Replacement (V0.5)                                                                              |
-|-------------------------|-------------------------------------------------------------------------------------------------|
-| `robot_id`              | URDF (or a `static_transform_publisher`) owns the parent of `cloud_frame`                        |
-| `robot_x`               | URDF / STF                                                                                       |
-| `robot_y`               | URDF / STF                                                                                       |
-| `robot_z`               | URDF / STF                                                                                       |
-| `frame_id`              | `cloud_frame` (semantically equivalent, different default name)                                  |
-| `imu_frame_id`          | no replacement — auto-derived from `cloud_frame` (strip trailing `_link`, append `_imu`)          |
-| `disable_base_link_pub` | no replacement — the TF it gated is no longer emitted at all                                     |
+| Removed (V0.3.x)        | Replacement (V0.5)                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| `robot_id`              | URDF (or a `static_transform_publisher`) owns the parent of `cloud_frame`                 |
+| `robot_x`               | URDF / STF                                                                                |
+| `robot_y`               | URDF / STF                                                                                |
+| `robot_z`               | URDF / STF                                                                                |
+| `frame_id`              | `cloud_frame` (semantically equivalent, different default name)                           |
+| `imu_frame_id`          | no replacement — auto-derived from `cloud_frame` (strip trailing `_link`, append `_imu`)  |
+| `disable_base_link_pub` | no replacement — the flag is gone because the TF is gated and is no longer emitted at all |
 
 ### Step-by-step recipe (existing V0.3.x users)
 
@@ -534,8 +544,8 @@ A V0.3.x config that placed the L2 25 cm above and 10 cm forward of `base_link`:
 
 ```yaml
 # V0.3.x (before)
-frame_id: "lidar3d"
-imu_frame_id: "lidar3d_imu"
+frame_id: "l2lidar"
+imu_frame_id: "l2lidar_imu"
 robot_id: "base_link"
 robot_x: 0.10
 robot_y: 0.00
@@ -546,7 +556,7 @@ Migrates to:
 
 ```yaml
 # V0.5 (after)
-l2_name: "lidar3d"     # or leave default "l2lidar"
+l2_name: "l2lidar"     # or leave default "l2lidar"
 cloud_frame: ""        # resolves to "lidar3d_link"
 publish_tf: true
 ```
@@ -554,23 +564,45 @@ publish_tf: true
 Plus, in your URDF (or as a one-line `static_transform_publisher`):
 
 ```xml
-<joint name="lidar3d_joint" type="fixed">
+<joint name="l2lidar_joint" type="fixed">
   <parent link="base_link"/>
-  <child link="lidar3d_link"/>
+  <child link="l2lidar_link"/>
   <origin xyz="0.10 0 0.25" rpy="0 0 0"/>
 </joint>
 ```
 
+one-line static transform:
+
+```
+ros2 run tf2_ros static_transform_publisher \
+  --x 0.10 \
+  --y 0.0 \
+  --z 0.25 \
+  --roll 0.0 \
+  --pitch 0.0 \
+  --yaw 0.0 \
+  --frame-id base_link \
+  --child-frame-id l2lidar_link
+```
+
 ### `disable_base_link_pub` users
 
-If your V0.3.5+ config had `disable_base_link_pub: true`, you were already taking ownership of the static TF in your URDF. Under V0.5, this is the only mode the driver supports — the flag is gone because the TF it gated is no longer emitted at all. Migration is the same as above; you can just delete the `disable_base_link_pub` line from your YAML.
+If your V0.3.5+ config had `disable_base_link_pub: true`, you were already taking ownership of the static TF in your URDF. Under V0.5, this is the only mode the driver supports — the flag is gone because the TF is gated is no longer emitted at all. Migration is the same as above; you can just delete the `disable_base_link_pub` line from your YAML.
 
 * * *
 
 Versions
 -------
 
+
+
+### Current Version
+
 **0.5.0** – Single-frame geometry refactor (breaking change). Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`). Auto-derived IMU frame from `cloud_frame`. Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement. See **Migration from V0.3.x to V0.5** above. Version bumped from prior `0.3.7` (CMakeLists.txt) and `0.2.3` (package.xml) — both unified at `0.5.0`.
+
+
+
+### Version history
 
 **0.1.0** – Initial functional driver with synchronized IMU and point cloud publishing.  This is only the intial release and does not include a prebuilt executable.  That is planned for the 0.2.0 release
 
@@ -626,6 +658,8 @@ Added initialization of the accelerometer and gyroscopic covariances for the IMU
 **0.3.6** - No changes to the source code.  Changes to the CMakeList.txt file which build a install directory for the distributable app. This change allows the executable disto to be run without the installation of Qt.
 
 **0.3.7** - Code cleanup: renaming l2lidar_node class members variable to end with _ , comments updates. Disable/enable watchdog timeout for supporting L2 startup in standby.  Added topic IDs to be set in the config .yaml file. Documentation cleanup and updated to reflect current operation.  Added the license folder that was lost in V0.3.6.
+
+**0.3.8** - Added dynamic config params for roll, pitch only pose correction and use system now timestamp for IMU and point cloud timestamps.  Added config params for roll, pitch, yaw covariance values. Updated to L2lidarClass V1.3.4.
 
 * * *
 

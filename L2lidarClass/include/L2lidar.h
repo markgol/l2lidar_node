@@ -101,9 +101,32 @@
 //                      minimal numerical loss
 //  V1.3.2  2026-05-24  Corrected fixed IMU to point cloud packet timing constraint.
 //                      This is now a settable parameter.
-//  V1.3.3  20260-05-30 Corrected bug in timestamp correction introduced in V1.3.0
+//  V1.3.3  2026-05-30 Corrected bug in timestamp correction introduced in V1.3.0
 //                      The IMU timestamp was incorrectly being calculated when
 //                      the fix time stamp was enabled.
+//  V1.3.4  2026-06-15  Added adjust RollPitch only flag to IMUadjust correction to:
+//                          ConvertL2data2pointcloud()
+//                      Removed ConvertL2data2pointcloud() use of System Now time
+//                      Added SetUseSystemNowTimestamps() and GetUseSystemNowTimestamps().
+//                          if true it substitutes systemnow time for the packet timestamp
+//                            when a packet is recieved and decoded.
+//                          It is recommended that sync to host and timestamp correction be used instead.
+//                          This is added to emulate what the L2 archive library does with timestamps.
+//                      Added Quaternion normalization before pose correction.
+//                      Refactored quaternion and euler methods into quaternion.h
+//                      Corrected initialization and reinitialization of time stamp correction
+//                          for various start, restart, connect and disconnect conditions
+//                          using conditional logic based on the settings of host to L2 timestamp syncing
+//                          and time stamp correction flags.
+//                      SetL2TimeScale() changed to a bool return.  Flags invalid settings of
+//                          numerator, denominator.  Timestamp correction will not be performed
+//                          until valid values are set.
+//                          Invalid: numerator<=denominator, numerator<=0, denominator<=0,
+//                                   numberator/denominator<1.5, numerator/denominator>3.0
+//                      Corrected FixTimestamp to handle various startup conditions correctly
+//                          particularly after L2disconnect and L2connect when sync to host setting
+//                          have changed.
+//  V1.3.5  2026-06-21  Added optional parameter for gateway IP address and subnet mask in setL2UDPconfig()
 //
 //--------------------------------------------------------
 
@@ -276,15 +299,38 @@ public:
     // This set the stored UDP configuration on the L2
     // a power cycle is required after this for it to take effect
     bool setL2UDPconfig(QString hostIP, uint32_t hostPort,
-                        QString LidarIP, uint32_t LidarPort);
+                        QString LidarIP, uint32_t LidarPort,
+                        QString gateway = "0.0.0.0",
+                        QString subnet = "255.255.255.0");
     bool SetWorkMode(uint32_t mode);  // requires reset or power cycle after setting
 
     // L2 Timstamp correction and controls
+    void SetUseSystemNowTimestamps(bool enable) {mUseSystemTimestamp = enable;}
+    bool GetUseSystemNowTimestamps() {return mUseSystemTimestamp;}
+
     void EnableL2TimeCorrection(bool enableflag) {mEnableL2TimeStampFix = enableflag; }
-    void GetL2TimeScale(long long& ScaleNumerator, long long& ScaleDenominator)
-            {ScaleNumerator = mL2ScaleTimeNum; ScaleDenominator = ScaleDenominator;}
-    void SetL2TimeScale(long long ScaleNumerator, long long ScaleDenominator)
-            {mL2ScaleTimeNum = ScaleNumerator; mL2ScaleTimeDenom = ScaleDenominator;}
+    bool GetL2TimeScale(long long& ScaleNumerator, long long& ScaleDenominator)
+            {ScaleNumerator = mL2ScaleTimeNum;
+             ScaleDenominator = mL2ScaleTimeDen;
+             return mBadTSscalar;}
+    bool SetL2TimeScale(long long ScaleNumerator, long long ScaleDenominator)
+    {
+        mL2ScaleTimeNum = ScaleNumerator; mL2ScaleTimeDen = ScaleDenominator;
+        double Num = (double) ScaleNumerator;
+        double Den = (double) ScaleDenominator;
+
+        if((ScaleNumerator <=0) |
+            (ScaleDenominator <=0) |
+            (ScaleNumerator <= ScaleDenominator) |
+            ((Num/Den) < 1.5) |
+            ((Num/Den) > 3.0)) {
+
+            mBadTSscalar = true;
+            return false;
+        }
+        mBadTSscalar = false;
+        return true;
+    }
 
     // L2 timestamp syncing to host (timer driven)
     void EnableL2TSsync(bool enable);
@@ -334,9 +380,10 @@ public:
     void DisconnectL2();   // close socket
 
     // convert point frame data from L2 to point cloud
-    bool ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjust,
-                                bool CalOVR, double CalScale, double CalBias,
-                                double timeConstraintIMU_PC = 0.07);
+    bool ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
+                                  bool IMUadjust,bool AdjustRollPitchOnly,
+                                  bool CalOVR, double CalScale, double CalBias,
+                                  double timeConstraintIMU_PC = 0.07);
 
 signals:
     void ackReceived();
@@ -369,7 +416,6 @@ private: // functions
     void decode2D(const QByteArray& datagram, uint64_t Offset);
     void decodeImu(const QByteArray& datagram, uint64_t Offset);
     void decodeVersion(const QByteArray& datagram, uint64_t Offset);
-    void decodeTimestamp(const QByteArray& datagram, uint64_t Offset);
     void decodeL2Params(const QByteArray& datagram, uint64_t Offset);
     void decodeMAC(const QByteArray& datagram, uint64_t Offset);
     void decodeWorkmode(const QByteArray& datagram, uint64_t Offset);
@@ -398,6 +444,8 @@ private: // functions
                      );
 
     void FixTimeStamp(TimeStamp& stamp);
+    void SetSystemTimeStamp(TimeStamp& stamp);
+
 
 
 private: // variables
@@ -473,18 +521,26 @@ private: // variables
     // last known timestamp sync
     // This is used as offset along with scale to correct
     // the L2 timestamp
-    long long mLastTimestamp {0}; // units are nanoseconds
+    long long mLastTimestamp {-1}; // units are nanoseconds
     // L2 Fw Version 2.8.11.1, compile date: 2025-07-30
-    // is known to have a timestamp which is slow by
-    // a factor 2.0
-    // Bench measurement (see issue #3): on one 2.8.11.1 unit the true
-    // factor was ~1.988 at cold start, drifting to ~1.991 over a
-    // 20 minute warm-up (thermal; imu_temperature settles near 60 C).
-    // Num/Denom can express a measured value, e.g. 1988/1000.
+    // This is known to have a timestamp which is slow by a factor 1/2 actual time
+    // As an example the bench measurement on one L2 the actual factor is 0.4983629.
+    // This was measured after 15 minutes of warmup when temperature
+    // drift stabilized.  It appears that the IMU temperature may be
+    // controlled at ~60C.  This results in using a scaler = (1/0.498363):
+    //      mL2ScaleTimeNum = 200567
+    //      mL2ScaleTimeDen = 100000
+    // Individual measurements should be made on each L2
     long long mL2ScaleTimeNum {2};
-    long long mL2ScaleTimeDenom {1};
+    long long mL2ScaleTimeDen {1};
+    bool mBadTSscalar {false};
+
+    // sync L2 to host controls
     bool mL2EnableSyncHost = false;
     uint32_t mL2TSsyncRate = {0}; // stop timer
+
+    // Ignore packet timestamps, return SystemNow tiemstamps instead
+    bool mUseSystemTimestamp {false};
 
     int skipIMUpackets {100}; // countdown to good frames
     int skipPCpackets {100};// countdown to good frames

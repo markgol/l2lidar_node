@@ -127,6 +127,29 @@
 //  V1.3.3  20260-05-30 Corrected bug in timestamp correction introduced in V1.3.0
 //                      The IMU timestamp was incorrectly being calculated when
 //                      the fix time stamp was enabled.
+//  V1.3.4  2026-06-15  Added adjust RollPitch only flag to IMUadjust correction to:
+//                          ConvertL2data2pointcloud()
+//                      Removed ConvertL2data2pointcloud() use of System Now time
+//                      Added SetUseSystemNowTimestamps() and GetUseSystemNowTimestamps().
+//                          if true it substitutes systemnow time for the packet timestamp
+//                            when a packet is recieved and decoded.
+//                          It is recommended that sync to host and timestamp correction be used instead.
+//                          This is added to emulate what the L2 archive library does with timestamps.
+//                      Added Quaternion normalization before pose correction.
+//                      Refactored quaternion and euler methods into quaternion.h
+//                      Corrected initialization and reinitialization of time stamp correction
+//                          for various start, restart, connect and disconnect conditions
+//                          using conditional logic based on the settings of host to L2 timestamp syncing
+//                          and time stamp correction flags.
+//                      SetL2TimeScale() changed to a bool return.  Flags invalid settings of
+//                          numerator, denominator.  Timestamp correction will not be performed
+//                          until valid values are set. Default conditions are 2,1 which are valid.
+//                          Invalid: numerator<=denominator, numerator<=0, denominator<=0,
+//                                   numberator/denominator<1.5, numerator/denominator>3.0
+//                      Corrected FixTimestamp to handle various startup conditions correctly
+//                          particularly after L2disconnect and L2connect when sync to host setting
+//                          have changed.
+//  V1.3.5  2026-06-21  Added parameter for gateway IP address and subnet mask in setL2UDPconfig()
 //
 //--------------------------------------------------------
 
@@ -174,6 +197,8 @@
 //--------------------------------------------------------
 
 #include "L2lidar.h"
+#include <chrono>
+#include <thread>
 
 //--------------------------------------------------------------------
 // L2lidar class constructor
@@ -396,11 +421,6 @@ void L2lidar::processDatagram(const QByteArray& datagram)
                 Offset += header->packet_size;
                 break;
 
-            case LIDAR_TIME_STAMP_PACKET_TYPE:
-                decodeTimestamp(PacketBuffer,Offset);
-                Offset += header->packet_size;
-                break;
-
             case LIDAR_PARAM_DATA_PACKET_TYPE:
                 decodeL2Params(PacketBuffer,Offset);
                 Offset += header->packet_size;
@@ -459,15 +479,18 @@ void L2lidar::decode3D(const QByteArray& datagram, uint64_t Offset)
     latest3DdataPacket_.data = pkt->data;
     latest3DdataPacket_.tail = pkt->tail;
 
-    // correct timestamp if needed
-    // initally for test only changed latest
-    // after testing also change packet
+    // correct timestamp as directed
     if(mEnableL2TimeStampFix) {
         FixTimeStamp(latest3DdataPacket_.data.info.stamp);
-    } else {
-        latestTimestamp_.data.sec = latest3DdataPacket_.data.info.stamp.sec;
-        latestTimestamp_.data.nsec = latest3DdataPacket_.data.info.stamp.nsec;
     }
+
+    //ignore tiemstamps and use system time as directed
+    if(mUseSystemTimestamp) {
+        SetSystemTimeStamp(latest3DdataPacket_.data.info.stamp);
+    }
+
+    latestTimestamp_.data.sec = latest3DdataPacket_.data.info.stamp.sec;
+    latestTimestamp_.data.nsec = latest3DdataPacket_.data.info.stamp.nsec;
 
     PacketMutex.unlock();
     // end of critical section
@@ -502,15 +525,18 @@ void L2lidar::decode2D(const QByteArray& datagram, uint64_t Offset)
     latest2DdataPacket_.data = pkt->data;
     latest2DdataPacket_.tail = pkt->tail;
 
-    // correct timestamp if needed
-    // initally for test only changed latest
-    // after testing also change packet
+    // correct timestamp as directed
     if(mEnableL2TimeStampFix) {
         FixTimeStamp(latest2DdataPacket_.data.info.stamp);
-    } else {
-        latestTimestamp_.data.sec = latest2DdataPacket_.data.info.stamp.sec;
-        latestTimestamp_.data.nsec = latest2DdataPacket_.data.info.stamp.nsec;
     }
+
+    //ignore tiemstamps and use system time as directed
+    if(mUseSystemTimestamp) {
+        SetSystemTimeStamp(latest2DdataPacket_.data.info.stamp);
+    }
+
+    latestTimestamp_.data.sec = latest2DdataPacket_.data.info.stamp.sec;
+    latestTimestamp_.data.nsec = latest2DdataPacket_.data.info.stamp.nsec;
 
     PacketMutex.unlock();
     // end of critical section
@@ -546,15 +572,18 @@ void L2lidar::decodeImu(const QByteArray& datagram, uint64_t Offset)
     latestImuPacket_.data = pkt->data;
     latestImuPacket_.tail = pkt->tail;
 
-    // correct timestamp if needed
-    // initally for test only changed latest
-    // after testing also change packet
+    // correct timestamp as directed
     if(mEnableL2TimeStampFix) {
         FixTimeStamp(latestImuPacket_.data.info.stamp);
-    } else {
-        latestTimestamp_.data.sec = pkt->data.info.stamp.sec;
-        latestTimestamp_.data.nsec = pkt->data.info.stamp.nsec;
     }
+
+    //ignore tiemstamps and use system time as directed
+    if(mUseSystemTimestamp) {
+        SetSystemTimeStamp(latestImuPacket_.data.info.stamp);
+    }
+
+    latestTimestamp_.data.sec = latestImuPacket_.data.info.stamp.sec;
+    latestTimestamp_.data.nsec = latestImuPacket_.data.info.stamp.nsec;
 
     PacketMutex.unlock();
     // end of critical section
@@ -591,44 +620,6 @@ void L2lidar::decodeVersion(const QByteArray& datagram, uint64_t Offset)
 
     // send out notice that a VERSION packet received
     emit versionReceived();
-}
-
-//--------------------------------------------------------------------
-// TIMESTAMP Decoder
-// Currently no timestamp packet has been observed being sent
-// by the L2
-//--------------------------------------------------------------------
-void L2lidar::decodeTimestamp(const QByteArray& datagram, uint64_t Offset)
-{
-    const auto* header =
-        reinterpret_cast<const FrameHeader*>(datagram.constData() + Offset);
-
-    if ((size_t)header->packet_size != sizeof(LidarTimeStampPacket)) {
-        lostPackets_++;
-        return;
-    }
-
-    totalOther_++;
-    totalPackets_++;
-
-    const auto* pkt =
-        reinterpret_cast<const LidarTimeStampPacket*>(datagram.constData()+Offset);
-
-    // critical section
-    PacketMutex.lock();
-    if(mEnableL2TimeStampFix) {
-        TimeStamp CurrentTimeStamp;
-        CurrentTimeStamp = pkt->data.data;
-        // FixTimeStamp also sets latestTimestamp_
-        FixTimeStamp(CurrentTimeStamp);
-    } else {
-        latestTimestamp_ = pkt->data;
-    }
-    PacketMutex.unlock();
-    // end of critical section
-
-    // send out notice that a TIMESTAMP packet received
-    emit timestampReceived();
 }
 
 //--------------------------------------------------------------------
@@ -1037,6 +1028,8 @@ bool L2lidar::LidarReset(void)
         return false;
     }
 
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    mLastTimestamp = -1;
 
     return true;
 }
@@ -1206,11 +1199,14 @@ bool L2lidar::SetL2MAC(LidarMacAddressConfig MACsettings)
 //
 //--------------------------------------------------------------------
 bool L2lidar::setL2UDPconfig(QString hostIP, uint32_t hostPort,
-                             QString LidarIP, uint32_t LidarPort)
+                             QString LidarIP, uint32_t LidarPort,
+                             QString gateway, QString subnet)
 {
     // convert IP string to numbers
     int L2ip[4] {0,0,0,0};
     int Hip[4] {0,0,0,0};
+    int Gip[4] {0,0,0,0};
+    int sn[4] {255,255,255,0};
 
     // make sure valid ip
     // extract Lidar ip
@@ -1233,7 +1229,7 @@ bool L2lidar::setL2UDPconfig(QString hostIP, uint32_t hostPort,
     if(!result) return false;
     if(L2ip[3]<0 || L2ip[3]>255) return false;
 
-    // extract hist ip
+    // extract host ip
     parts = hostIP.split('.');
     Hip[0] = parts[0].toUInt(&result);
     if(!result) return false;
@@ -1251,6 +1247,42 @@ bool L2lidar::setL2UDPconfig(QString hostIP, uint32_t hostPort,
     if(!result) return false;
     if(Hip[3]<0 || Hip[3]>255) return false;
 
+    // extract gateway ip
+    parts = gateway.split('.');
+    Gip[0] = parts[0].toUInt(&result);
+    if(!result) return false;
+    if(Gip[0]<0 || Gip[0]>255) return false;
+
+    Gip[1] = parts[1].toUInt(&result);
+    if(!result) return false;
+    if(Gip[1]<0 || Gip[1]>255) return false;
+
+    Gip[2] = parts[2].toUInt(&result);
+    if(!result) return false;
+    if(Gip[2]<0 || Gip[2]>255) return false;
+
+    Gip[3] = parts[3].toUInt(&result);
+    if(!result) return false;
+    if(Gip[3]<0 || Gip[3]>255) return false;
+
+    // extract subnet mask
+    parts = subnet.split('.');
+    sn[0] = parts[0].toUInt(&result);
+    if(!result) return false;
+    if(sn[0]<0 || sn[0]>255) return false;
+
+    sn[1] = parts[1].toUInt(&result);
+    if(!result) return false;
+    if(sn[1]<0 || sn[1]>255) return false;
+
+    sn[2] = parts[2].toUInt(&result);
+    if(!result) return false;
+    if(sn[2]<0 || sn[2]>255) return false;
+
+    sn[3] = parts[3].toUInt(&result);
+    if(!result) return false;
+    if(sn[3]<0 || sn[3]>255) return false;
+
     // Set lidar ip address
     LidarIpAddressConfigPacket config;
 
@@ -1267,15 +1299,15 @@ bool L2lidar::setL2UDPconfig(QString hostIP, uint32_t hostPort,
     config.data.lidar_port = LidarPort;
     config.data.user_port = hostPort;
 
-    config.data.gateway[0] = 0;
-    config.data.gateway[1] = 0;
-    config.data.gateway[2] = 0;
-    config.data.gateway[3] = 0;
+    config.data.gateway[0] = Gip[0];
+    config.data.gateway[1] = Gip[1];
+    config.data.gateway[2] = Gip[2];
+    config.data.gateway[3] = Gip[3];
 
-    config.data.subnet_mask[0] = 255;
-    config.data.subnet_mask[1] = 255;
-    config.data.subnet_mask[2] = 255;
-    config.data.subnet_mask[3] = 0;
+    config.data.subnet_mask[0] = sn[0];
+    config.data.subnet_mask[1] = sn[1];
+    config.data.subnet_mask[2] = sn[2];
+    config.data.subnet_mask[3] = sn[3];
 
     setPacketHeader(&config.header, LIDAR_IP_ADDRESS_CONFIG_PACKET_TYPE, sizeof(LidarIpAddressConfigPacket));
 
@@ -1547,9 +1579,10 @@ bool L2lidar::ConnectL2()
         StartLatency();
 
         // setup host sync timer
+        connect(&TimerSyncTimer, &QTimer::timeout,
+                this, &L2lidar::SyncClock);
+
         if(mL2EnableSyncHost && mL2TSsyncRate>0){
-            connect(&TimerSyncTimer, &QTimer::timeout,
-                    this, &L2lidar::SyncClock);
             TimerSyncTimer.start(mL2TSsyncRate);
         } else {
             TimerSyncTimer.stop();
@@ -1667,6 +1700,9 @@ void L2lidar::DisconnectL2()
         disconnect(&LatencyTimer, &QTimer::timeout,
                    this, &L2lidar::requestRTTLatencyMeasurement);
     }
+
+    mLastTimestamp = -1;
+    mL2EnableSyncHost = false;
     mConnected = false;
 }
 
@@ -1773,7 +1809,8 @@ void L2lidar::UpdateEWMAStats(double alpha,
 }
 
 //--------------------------------------------------------------------
-//  ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjust,
+//  ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
+//                          bool IMUadjust,bool AdjustRollPitchOnly,
 //                          bool CalOverride, double CalScale, double timeConstraintIMU_PC = 0.07)
 //  This returns the latest point cloud Frame
 //      frame is (QVector<PCpoint>)
@@ -1789,7 +1826,8 @@ void L2lidar::UpdateEWMAStats(double alpha,
 //  Change in the unitree_lidar_utilities.h to both PointUnitree and
 //  PointCloudUnitree related to timestamps.
 //--------------------------------------------------------------------
-bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjust,
+bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
+                                       bool IMUadjust, bool AdjustRollPitchOnly,
                                        bool CalOverride, double CalScale, double CalBias,
                                        double timeConstraintIMU_PC)
 {
@@ -1801,9 +1839,6 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
     // Retrieve packet
     unilidar_sdk2::PointCloudUnitree cloud;
 
-    // use system time if host to sync is not true
-    // use system time if l2 time stamp ifx is not true
-    bool UseSystemTime = !(mL2EnableSyncHost && mEnableL2TimeStampFix);
 
     if(Frame3D) {
         // get latest 3D packet
@@ -1814,7 +1849,7 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
         }
 
         unilidar_sdk2::parseFromPacketToPointCloud(
-            cloud, packet, UseSystemTime, 0, 100, CalOverride, CalScale, CalBias);
+            cloud, packet, false, 0, 100, CalOverride, CalScale, CalBias);
         time = (double)packet.data.info.stamp.sec + (double)packet.data.info.stamp.nsec * 1.0e-9;
     } else {
         // get latest 2D packet
@@ -1825,7 +1860,7 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
         }
         // if !mL2EnableSyncHost then use system time (now)
         unilidar_sdk2::parseFromPacketPointCloud2D(
-            cloud, packet, UseSystemTime, 0, 100, CalOverride, CalScale, CalBias);
+            cloud, packet, false, 0, 100, CalOverride, CalScale, CalBias);
         time = (double)packet.data.info.stamp.sec + (double)packet.data.info.stamp.nsec * 1.0e-9;
     }
 
@@ -1876,7 +1911,15 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
         long long actualtime;
 
         if(adjustWithIMU) {
-            rotateByQuaternion(Quat,p.x,p.y,p.z);
+            normalizeQuaternion(Quat);
+            if(AdjustRollPitchOnly) {
+                // rotate roll and pitch only
+                Quaternion q_no_yaw = removeYaw(Quat);
+                rotateByQuaternion(q_no_yaw, p.x,p.y,p.z);
+            } else {
+                // rotate roll, pitch, and yaw
+                rotateByQuaternion(Quat,p.x,p.y,p.z);
+            }
         }
         // Unitree provided initially as float but calculations all done as double
         // each point time is adjusted to be epoch time in nanoseconds
@@ -1900,20 +1943,133 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D, bool IMUadjus
 //  FixTimeStamp(TimeStamp stamp)
 //  This returns the updated timestamp in stamp
 //  This should only called from a method that has already QMutexLocker locker(&PacketMutex);
+//  This is not an public method
+//  The return value of SetL2TimeScale() should be used to determine if there
+//  is an issue with parameters.
+//--------------------------------------------------------------------
+
+// This is a helper function to initialize mLastTimeStamp under certain conditions
+// (see below in FixTimestamp method)
+// This really requires 128 bit arithmetic and that is the preferred implementation.
+// The problem is MSVC does not support 128 bit arithmetic
+// so this is an alternative when compiling with MSVC.
+// This is only used when MSVC or Intel compiler is used and is an approximation
+// to the correct solution.
+//
+inline long long TSsolve_x(long long y, long long z, long long n, long long d)
+{
+    // assumes: n > d > 0, d!=0
+
+    long double num =
+        (long double)d * (long double)y - (long double)n * (long double)z;
+
+    long double den = (long double)(d - n);
+
+    long double x = num / den;
+
+    return (long long)(x);
+}
+
+// This requires 128 bit arithmetic and is the preferred implementation
+// It supports numerator and denominators up to 9 significant digits
+// inline long long TSsolve_x(long long y, long long z, long long n, long long d)
+// {
+//     // assumes n > d > 0
+//
+//     __int128 num = (__int128)n * z - (__int128)d * y;
+//     __int128 den = (__int128)(n - d);
+//
+//     return (long long)(num / den);
+// }
+
+//--------------------------------------------------------------------
+//  FixTimeStamp
 //--------------------------------------------------------------------
 void L2lidar::FixTimeStamp(TimeStamp& stamp)
 {
     long long t1;
     long long t2;
 
+    if(mBadTSscalar) {
+        // bad parameters for numerator and/or denominator
+        return;
+    }
+
+    if(mLastTimestamp<0) {
+        // To get here means host sync of L2 timestamp to host has not happened
+        // and mLastTimeStamp is not initialized, it is -1
+        // These are the posibilities:
+        //      A) Timestamp sync to host is disabled and the L2 was reset
+        //      B) Timstsamp sync to host is enabled and hasn't happened yet
+        //      C) Timestamp sync to host is disabled but was previsouly enabled
+        //          and a L2disconnect then L2connect occurred
+        //
+        //  case A
+        //      The L2 was never synced to host after power up or reset
+        //      and won't be.  When this happens the timestamps from the L2
+        //      are relative to the power up or restart of the L2.
+        //      The L2 starts with time equal to 0.  TO detect this the L2
+        //      L2 timestamp is coompared to the current Epoch time.  If that
+        //      delta time is more than 1o years (there weren't any L2s 10 years ago)
+        //      then this is case A.
+        //      mLastTimestamp should be set to 0.  The timestamp fix will
+        //      correctly just scale the L2 time using the scalar and no offset
+        //      to adjust to Epoch time
+        //  case B
+        //      This occurs before a sync to host was recieved by the L2.
+        //      This can be treated just like case A for initialization
+        //      with the same detection and setting. mLastTimestamp is set to 0.
+        //      When a sync to host command is finally sent to the L2 this will
+        //      automatically set the mLastTimestamp to the sync time of the host
+        //  case C
+        //      This occurs when the L2 is powered up or reset then sent a sync
+        //      to host command, then sync to host is disabled, an L2disconnect
+        //      is performed, a connectL2 performed.  This sequence can occur when
+        //      an app is run that syncs the L2 to host and exits then an app is run
+        //      that doesn't sync the L2 to host.  It has no knowledge of when the
+        //      last sync to host occurred but the L2 will return time with a Epoch
+        //      start time of that last sync. The problem is the L2 is returning time
+        //      running at ~1/2 real time since the sync occurred. In this instance
+        //      what is known is the current L2 time, the current system time, and
+        //      time correction scaling factor.  These can be used to extrapolate
+        //      exactly when the last sync occured and set mLastTimestamp to that value.
+        //      This allows the L2 timestamp to corrected for correct Epoch time.
+        //      This is assuming that the proper scalar for the timestamp has been used.
+        //
+        TimeStamp SystemTime;
+
+        // test for Case A and B
+        // calculate time difference between SystemTime and L2 time
+        unilidar_sdk2::getSystemTimeStamp(SystemTime);
+        long long y = (long long) SystemTime.sec*1000000000ll + (long long)SystemTime.nsec;
+        long long z = (long long)stamp.sec*1000000000ll + (long long)stamp.nsec;  // convert to nanoseconds
+        long long deltaTime = y-z;
+        if(deltaTime > 315576000000000000ll) { // approx. 10 years in nanoseconds
+            mLastTimestamp = 0; // time stamps are only relative to when the L2 is powered up
+                                // They are not reported in Epoch time
+        } else {
+            // This is case C
+            // So the mLastTimestamp must be set to match the calculated time
+            // from current system time and the time reported in stamp
+            // x = (y-a*z)/(1-a)
+            // a is the time stamp scalar numerator/denominator
+            // mlastTimestamp = x;
+            // y = sytem time now timestamp
+            // z = 'stamp' (uncorrected timestamp from L2)
+            //
+            unilidar_sdk2::getSystemTimeStamp(SystemTime);
+            long long x = TSsolve_x(y,z,mL2ScaleTimeNum,mL2ScaleTimeDen);
+            mLastTimestamp = x;
+        }
+    }
     t1 = (long long)stamp.sec * 1000000000ll +
          (long long)stamp.nsec;  // t1 is in nanoseconds
 
     // corrected time in nanoseconds
-    //t2 = (((t1-mLastTimestamp) * mL2ScaleTimeNum)/mL2ScaleTimeDenom) + mLastTimestamp;
+    //t2 = (((t1-mLastTimestamp) * mL2ScaleTimeNum)/mL2ScaleTimeDen) + mLastTimestamp;
     t2 = t1-mLastTimestamp;
     t2 = t2 * mL2ScaleTimeNum;
-    t2 = t2 / mL2ScaleTimeDenom;
+    t2 = t2 / mL2ScaleTimeDen;
     t2 = t2 + mLastTimestamp;
 
     // convert to seconds, nanoseconds
@@ -1927,5 +2083,16 @@ void L2lidar::FixTimeStamp(TimeStamp& stamp)
     // This should only called from a method that has already QMutexLocker locker(&PacketMutex);
     latestTimestamp_.data.sec = stamp.sec; // seconds
     latestTimestamp_.data.nsec = stamp.nsec;
+    return;
+}
 
+//--------------------------------------------------------------------
+//  SetSystemTimeStamp
+//--------------------------------------------------------------------
+void L2lidar::SetSystemTimeStamp(TimeStamp& stamp)
+{
+    TimeStamp SystemTime;
+    unilidar_sdk2::getSystemTimeStamp(SystemTime);
+    stamp.sec = SystemTime.sec;
+    stamp.nsec = SystemTime.nsec;
 }

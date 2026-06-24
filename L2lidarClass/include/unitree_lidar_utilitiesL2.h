@@ -51,19 +51,13 @@
 //  2026-04-19  Added calibration overrides to:
 //                  parseFromPacketToPointCloud()
 //                  parseFromPacketPointCloud2D()
+//  2026-06-18  Comment updates only, removal of unused includes
 //
 //-----------------------------------------------------------------------
 
 #pragma once
 
-// modifcation for use with Qt using Qvector instead of std::vector
 #include <cstdint>
-//#include <iostream>  // not used here
-//#include <fstream>   // not used here
-//#include <iomanip>  // not used here
-//#include <deque>  // not used here
-//#include <vector>    // not used here
-//#include <memory>  // not used here
 #include <cmath>
 #include <chrono>
 #include <numbers>
@@ -79,6 +73,7 @@ namespace unilidar_sdk2{
 // CONSTANTS
 //  These are not actually used but are part of the unitree release
 //  These have been changed from float to double
+//  They have been kept here for reference
 ///////////////////////////////////////////////////////////////////////////////
 const double DEGREE_TO_RADIAN = std::numbers::pi_v<double> / 180.0;
 const double RADIAN_TO_DEGREE = 180.0 / std::numbers::pi_v<double>;
@@ -191,7 +186,7 @@ inline uint32_t crc32(const uint8_t *buf, uint32_t len)
 // @brief Parse from a point packet to a 3D point cloud
 // @param[out] cloud
 // @param[in] packet lidar point data packet
-// @param[in] use_system_timestamp use system timestamp, otherwise use lidar hardware timestamp
+// @param[in] use_system_timestamp use system timestamp, otherwise use packet timestamp
 // @param[in] range_min allowed minimum point range in meters
 // @param[in] range_max allowed maximum point range in meters
 //

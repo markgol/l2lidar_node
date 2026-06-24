@@ -85,6 +85,18 @@
 //                          to send a command to the L2 to bring it out of standby.  If the L2 automatically starts
 //                          automatically then the IMU and Point cloud packets woudl still be published but l2lidar_node
 //                          would never timeout.  This is implelemented using the config param standby_on_powerup_enabled
+//      V0.3.8  2026-06-20  Updated to L2lidarClass V1.3.4
+//                          Add config param for roll,ptich only with IMUadjust
+//                          Add config param for UseSystemNow timestamps
+//                          Add covariance matrix for IMU quaternion
+//		V0.5.0 2026-06-24	Updated to L2lidarClass V1.3.5
+//						Single-frame geometry refactor (breaking change).
+//						Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`).
+//						Auto-derived IMU frame from `cloud_frame`.
+//						Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement.
+//						See **Migration from V0.3.x to V0.5** in the README.md.
+//						CMakeLists.txt changed to copy additional files to executable standalone folders.
+//						package.xml version updated to V0.5.0
 //
 //      V1.0.0  2026-0x-xx  This will be the first production release.
 //
@@ -161,17 +173,18 @@ private:
     // deliberate stop doesn't trigger a respawn loop.
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 
-    // V0.5: single-frame topology — see README "Coordinate Frames".
+    // V0.5: single-frame topology   see README "Coordinate Frames".
     // cloud_frame_ is the L2's primary reference, where URDF should pin the
     // device, and what published PointCloud2 / IMU messages name in their
     // header.frame_id. imu_frame_ is auto-derived from cloud_frame_ at
     // startup (strip trailing "_link" if present, append "_imu"). publish_tf_
-    // gates emission of the intrinsic cloud_frame_ → imu_frame_ static TF.
+    // gates emission of the intrinsic cloud_frame_ ? imu_frame_ static TF.
     std::string l2_name_; // prefix for default-derived frame names
     std::string cloud_frame_; // primary reference frame, also published PointCloud2 frame_id
     std::string imu_frame_; // derived from cloud_frame_; published IMU frame_id
     bool publish_tf_ {true};
 
+    bool UseSystemTimeTS_ {false};
     bool time_corr_{true}, host_sync_{true};
     int64_t timeScaleNum_ {2};
     int64_t timeScaleDenom_ {1};
@@ -185,10 +198,14 @@ private:
     double gyro_x_covar_ {0.000025};
     double gyro_y_covar_ {0.000025};
     double gyro_z_covar_ {0.0000001};
+    double roll_covar_ {5.0e-9};
+    double pitch_covar_ {5.0e-9};
+    double yaw_covar_ {9.0};
 
     bool frame3d_;
 
-    bool imu_adjust_;
+    bool imu_adjust_ {false};
+    bool imuRollPitchOnly_ {true};
 
     // calibration override
     // These do not have to be globals

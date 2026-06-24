@@ -110,6 +110,19 @@
 //                          to send a command to the L2 to bring it out of standby.  If the L2 automatically starts
 //                          automatically then the IMU and Point cloud packets woudl still be published but l2lidar_node
 //                          would never timeout.  This is implelemented using the config param standby_on_powerup_enabled
+//      V0.3.8  2026-06-20  Updated to L2lidarClass V1.3.4
+//                          Add config param for roll,ptich only with IMUadjust
+//                          Add config param for UseSystemNow timestamps
+//                          Add covariance matrix for IMU quaternion
+//		V0.5.0 2026-06-24	Updated to L2lidarClass V1.3.5
+//						Single-frame geometry refactor (breaking change).
+//						Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`).
+//						Auto-derived IMU frame from `cloud_frame`.
+//						Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement.
+//						See **Migration from V0.3.x to V0.5** in the README.md.
+//						CMakeLists.txt changed to copy additional files to executable standalone folders.
+//						package.xml version updated to V0.5.0
+//
 //
 //      V1.0.0  2026-0x-xx  This will be the first production release.
 //
@@ -157,6 +170,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<int>("l2_sync_rate_ms", 50);
     declare_parameter<int>("timeScaleNum", 2);
     declare_parameter<int>("timeScaleDenom", 1);
+    declare_parameter<bool>("UseSystemTimeTS", false);
 
     // UDP latency measurement
     // normally there would be no need to enable
@@ -167,9 +181,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     // mounting reference and the cloud-data origin (per Unitree spec,
     // these are the same physical frame — see README "Coordinate Frames").
     // Default cloud_frame is empty as a sentinel for "derive from l2_name":
-    //   leave both defaults     → cloud_frame = "l2lidar_link"
-    //   set l2_name=front_lidar → cloud_frame = "front_lidar_link"
-    //   set cloud_frame=<X>     → that exact value wins (for multi-robot
+    //   leave both defaults     -> cloud_frame = "l2lidar_link"
+    //   set l2_name=front_lidar -> cloud_frame = "front_lidar_link"
+    //   set cloud_frame=<X>     -> that exact value wins (for multi-robot
     //                              namespacing, e.g. "bot1/lidar/l2lidar_link")
     // imu_frame is auto-derived from cloud_frame at startup.
     declare_parameter<std::string>("l2_name", "l2lidar");
@@ -181,7 +195,8 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     // adjust point cloud data using the gravity algined IMU packet pose
     // This does not correct yaw only roll and pitch
-    declare_parameter<bool>("imu_adjust", true);
+    declare_parameter<bool>("imu_adjust", false);
+    declare_parameter<bool>("imuRollPitchOnly", true);
 
     // override the L2 internal calibration for RangeScale and RangeBias
     declare_parameter<bool>("EnableCalRangeOVR", false);
@@ -204,6 +219,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<double>("gyro_x_covar", 0.000025);
     declare_parameter<double>("gyro_y_covar", 0.000025);
     declare_parameter<double>("gyro_z_covar", 0.0000002);
+    declare_parameter<double>("roll_covar", 4.9e-9); // this variance in radians not stddev in degrees
+    declare_parameter<double>("pitch_covar", 4.9e-9);// this variance in radians not stddev in degrees
+    declare_parameter<double>("yaw_covar", 10.0); // large because yaw is not reliable
 
     // Topic IDs for publishing
     declare_parameter<std::string>("point_cloud_topic_id", "/points");
@@ -227,9 +245,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     // Derive imu_frame from cloud_frame: strip trailing "_link" if present,
     // then append "_imu". Examples:
-    //   "l2lidar_link"            → "l2lidar_imu"
-    //   "bot1/lidar/l2lidar_link" → "bot1/lidar/l2lidar_imu"
-    //   "my_lidar"                → "my_lidar_imu"
+    //   "l2lidar_link"            -> "l2lidar_imu"
+    //   "bot1/lidar/l2lidar_link" -> "bot1/lidar/l2lidar_imu"
+    //   "my_lidar"                -> "my_lidar_imu"
     static constexpr std::string_view kLinkSuffix = "_link";
     if (cloud_frame_.size() >= kLinkSuffix.size() &&
         cloud_frame_.compare(
@@ -259,6 +277,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     bool latency;
     int sync_rate;
 
+    get_parameter("UseSystemTimeTS", UseSystemTimeTS_);
     get_parameter("enable_l2_time_correction", time_corr_);
     get_parameter("enable_l2_host_sync", host_sync_);
 
@@ -276,6 +295,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 	
     get_parameter("frame3d", frame3d_);
     get_parameter("imu_adjust", imu_adjust_);
+    get_parameter("imuRollPitchOnly", imuRollPitchOnly_);
 
     // get override calibration parameters
     get_parameter("EnableCalRangeOVR", EnableCalRangeOVR_);
@@ -285,6 +305,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     lidar_.SetCalibrationOVR(calRangeScale_, calRangeBias_);
     lidar_.EnableCalibrationOVR(EnableCalRangeOVR_);
     lidar_.SetL2TimeScale(timeScaleNum_,timeScaleDenom_);
+    lidar_.SetUseSystemNowTimestamps(UseSystemTimeTS_);
 
     // --------- Watchdog timer settings---------------
     get_parameter("watchdog_timeout_ms", watchdog_timeout_ms_);
@@ -307,6 +328,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     get_parameter("gyro_x_covar", gyro_x_covar_);
     get_parameter("gyro_y_covar", gyro_y_covar_);
     get_parameter("gyro_z_covar", gyro_z_covar_);
+    get_parameter("roll_covar", roll_covar_);
+    get_parameter("pitch_covar", pitch_covar_);
+    get_parameter("yaw_covar", yaw_covar_);
 
     // get UDP parameters, these are local
     std::string point_cloud_topic_id, imu_topic_id;
@@ -529,6 +553,11 @@ void L2LidarNode::onImuReceived()
     msg.linear_acceleration_covariance[4] = gyro_y_covar_;
     msg.linear_acceleration_covariance[8] = gyro_z_covar_;
 
+    // roll, pitch, yaw covariance
+    msg.orientation_covariance[0] = roll_covar_;
+    msg.orientation_covariance[4] = pitch_covar_;
+    msg.orientation_covariance[8] = yaw_covar_;
+
 	imu_pub_->publish(msg);
 }
 
@@ -545,7 +574,7 @@ void L2LidarNode::onPointCloudReceived()
     last_pc_time_.restart(); // restart watchdog
 
     Frame frame;
-    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d_, imu_adjust_,
+    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d_, imu_adjust_, imuRollPitchOnly_,
                                          EnableCalRangeOVR_,calRangeScale_,calRangeBias_))
         return;
 

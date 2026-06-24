@@ -138,6 +138,9 @@ add_custom_target(dist ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/config
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/launch
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/rviz
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/docs
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/urdf
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/meshes
 
   COMMAND ${CMAKE_COMMAND} -E copy
           $<TARGET_FILE:l2lidar_node>
@@ -181,7 +184,15 @@ add_custom_target(dist ALL
 
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_SOURCE_DIR}/docs
-          ${DIST_DIR}
+          ${DIST_DIR}/docs
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/urdf
+          ${DIST_DIR}/urdf
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/meshes
+          ${DIST_DIR}/meshes
 
   DEPENDS l2lidar_node
 )
