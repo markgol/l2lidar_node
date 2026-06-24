@@ -173,12 +173,12 @@ private:
     // deliberate stop doesn't trigger a respawn loop.
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_srv_;
 
-    // V0.5: single-frame topology   see README "Coordinate Frames".
+    // V0.5: single-frame topology -- see README "Coordinate Frames".
     // cloud_frame_ is the L2's primary reference, where URDF should pin the
     // device, and what published PointCloud2 / IMU messages name in their
     // header.frame_id. imu_frame_ is auto-derived from cloud_frame_ at
     // startup (strip trailing "_link" if present, append "_imu"). publish_tf_
-    // gates emission of the intrinsic cloud_frame_ ? imu_frame_ static TF.
+    // gates emission of the intrinsic cloud_frame_ -> imu_frame_ static TF.
     std::string l2_name_; // prefix for default-derived frame names
     std::string cloud_frame_; // primary reference frame, also published PointCloud2 frame_id
     std::string imu_frame_; // derived from cloud_frame_; published IMU frame_id
