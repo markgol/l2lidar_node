@@ -1,6 +1,7 @@
 """l2lidar_node launch (no rviz).
 
 Author: Mark Stegall
+Contributor: @Pondersome
 Module: l2lidar.launch.py
 
 Purpose:
@@ -34,6 +35,7 @@ Target: Ubuntu 24.04 systems with ROS 2 Jazzy installed.
 History:
   V0.1.0  2026-02-15  Initial package skeleton
   V0.2.2  2026-03-31  Functional release
+  V0.5.0  2026-06-24  Added launch configuration params to override UDP settings
 """
 
 from launch import LaunchDescription
