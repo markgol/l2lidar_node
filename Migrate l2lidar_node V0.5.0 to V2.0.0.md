@@ -105,7 +105,9 @@ configure to look like:
 
 ![63b9e0a9-792f-4081-a6ff-b4efcff82156](file:///C:/Users/photo/Pictures/Typedown/63b9e0a9-792f-4081-a6ff-b4efcff82156.png)
 
-Delete the build directory in your project folder for the l2lidar_node.
+**Delete the build directory in your project folder for the l2lidar_node.**
+
+**Delete the .QtCreator directory in your project for the l2lidar_node.**
 
 When you open the l2lidar_node in QtCreator select this kit for configuration.
 Also make sure to check both the Debug and Release to include in the configuration.
