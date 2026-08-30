@@ -6,12 +6,8 @@
 //
 //  Purpose:
 //
-//  The L2lidar class consists of 2 files:
-//      L2lidar.cpp
-//      L2lidar.h
-//
-//  This is to provide necesary software interfaces to control and
-//  receive data for the Unitree L2 LiDAR.
+//  To provide necesary software interfaces to control and
+//  receive and correct data for the Unitree L2 LiDAR.
 //
 //  This is to support applications such as diagnotic, point cloud viewer
 //  and ROS2 interfaces to the L2
@@ -32,16 +28,22 @@
 //          Serial UART
 //
 //  Observations:
-//      The serial UART on various platforms can be limited in speed and
-//      may not operate at the full sensor speed of 64K/sec sample points.
+//      The L2 has both documented and undocumented packet used to transmit
+//      and receive data with the L2 and a host computer.  Builtin calibration
+//      calibration values are not inconsistent at minimizing the distortion
+//      in the converted point cloud.  The IMU does not return reliable
+//      angles.  The L2 has considerable gyroscopic induced vibration that
+//      requires careful mounting in order to minimize its affect on both
+//      point cloud and IMU data.  The L2 has a timebase that has been
+//      measured at approx 1/2 realtime.
 //
 //  Current status:
 //      Implementation of class verified using UDP interface only.
 //      Serial UART impementation is being explored but not included.
 //      Working on integration and use of this class in support of ROS2
 //      as substitute for Unitree's SDK proprietary archive library.
-//
-//  Planned offical release will be V0.4.0
+//      Implements a calibration strategy to correct range data and
+//      override builtin calibration values.
 //
 //
 //  V0.1.0  2025-12-27  compilable skeleton created by ChatGPT
@@ -150,11 +152,29 @@
 //                          particularly after L2disconnect and L2connect when sync to host setting
 //                          have changed.
 //  V1.3.5  2026-06-21  Added parameter for gateway IP address and subnet mask in setL2UDPconfig()
+//  V1.3.6  2026-07-05  Changed return of range value from parseFromPacketToPointCloud()
+//                          and parseFromPacketPointCloud2D() to be actual range from L2
+//                          not the raw range value returned from L2 before calibration is applied.
+//                      Added SelectiveParseFromPacketToPointCloud() for 3d scans
+//                          This is not part of the original unitree_lidar_utilities.h SDK
+// V2.0.0RC1 2026-08-18 Adding range calibration class to be used in the L2lidar class
+//                          This will align with L2diagnostics V2.0.0
+//                          It will only include the application of the range correction methods
+//                          It does not include the creation and calibration procedures
+//                            that generates the calibration dataset used in the application of
+//                            range correction methods.
+//                      Updated some of the private class variables to start with m...
+//  V2.1.0  2026-08-27  Changed calibration file so that range correction
+//                          optional.  This allows just metadata to be saved
+//                          which includes the overrride biases.
+//                      Corrected logic error for EnableAlphaAngleCorrection
+//                      Changed files/names to reflect generalization
+//                          of the calibration file rather than RangeCorrection
 //
 //--------------------------------------------------------
 
 //--------------------------------------------------------
-// This uses the following Unitree L2 open sources:
+// This uses modified version of the following Unitree L2 open sources:
 //      unitree_lidar_protocol.h
 //      unitree_lidar_utilities
 // They have been modifed from the original sources
@@ -162,11 +182,12 @@
 // inconsistencies. These have been minor in most
 // instances.
 //
-// Copyright (c) 2024, Unitree Robotics
 // The orignal source can be found at:
 //      https://github.com/unitreerobotics/unilidar_sdk2
+//      Copyright (c) 2024, Unitree Robotics
 //      under License: BSD 3-Clause License (see files)
 //
+// Corrections/additions have been made to these 2 files
 //--------------------------------------------------------
 
 //--------------------------------------------------------
@@ -209,10 +230,8 @@
 L2lidar::L2lidar(QObject* parent)
     : QObject(parent)
 {
-    PacketBuffer.clear(); // make sure buffered starts cleared
-    latencyTimer.start();
+    PacketBuffer.clear();   // make sure buffered starts cleared
 }
-
 
 //====================================================================
 //  start of received packet handling section
@@ -854,6 +873,7 @@ void L2lidar::ClearCounts()
     lostPackets_ = 0;
     totalIMUretrieved_ = 0;
     totalPCretrieved_ = 0;
+    mNumPointedConverted = 0;
 }
 
 //====================================================================
@@ -1707,11 +1727,8 @@ void L2lidar::DisconnectL2()
 }
 
 //====================================================================
-//
-//  Support functions
-//
+//  SetL2TSsyncRate
 //====================================================================
-
 void L2lidar::SetL2TSsyncRate(uint32_t Rate)
 {
     // nothing to do
@@ -1728,6 +1745,9 @@ void L2lidar::SetL2TSsyncRate(uint32_t Rate)
     }
 }
 
+//====================================================================
+//  EnableL2TSsync
+//====================================================================
 void L2lidar::EnableL2TSsync(bool enable)
 {
     // no change, nothing to do
@@ -1784,7 +1804,6 @@ void L2lidar::EnableLatencyMeasure(bool enable)
     mEnableLatency = enable;
 }
 
-
 //--------------------------------------------------------------------
 //  UpdateEWMAStats
 //  This is in updating the latency stats
@@ -1809,9 +1828,7 @@ void L2lidar::UpdateEWMAStats(double alpha,
 }
 
 //--------------------------------------------------------------------
-//  ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
-//                          bool IMUadjust,bool AdjustRollPitchOnly,
-//                          bool CalOverride, double CalScale, double timeConstraintIMU_PC = 0.07)
+//  ConvertL2data2pointcloud(Frame& frame, bool Frame3D)
 //  This returns the latest point cloud Frame
 //      frame is (QVector<PCpoint>)
 //      Frame3D true process latest 3D packet
@@ -1826,10 +1843,7 @@ void L2lidar::UpdateEWMAStats(double alpha,
 //  Change in the unitree_lidar_utilities.h to both PointUnitree and
 //  PointCloudUnitree related to timestamps.
 //--------------------------------------------------------------------
-bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
-                                       bool IMUadjust, bool AdjustRollPitchOnly,
-                                       bool CalOverride, double CalScale, double CalBias,
-                                       double timeConstraintIMU_PC)
+bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D)
 {
     LidarImuDataPacket Imu;
     double time;
@@ -1848,8 +1862,12 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
             return false;
         }
 
-        unilidar_sdk2::parseFromPacketToPointCloud(
-            cloud, packet, false, 0, 100, CalOverride, CalScale, CalBias);
+        SelectiveParseFromPacketToPointCloud(
+            cloud, packet, false);
+
+        if(cloud.points.empty())
+            return false;
+
         time = (double)packet.data.info.stamp.sec + (double)packet.data.info.stamp.nsec * 1.0e-9;
     } else {
         // get latest 2D packet
@@ -1860,11 +1878,11 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
         }
         // if !mL2EnableSyncHost then use system time (now)
         unilidar_sdk2::parseFromPacketPointCloud2D(
-            cloud, packet, false, 0, 100, CalOverride, CalScale, CalBias);
+            cloud, packet, false, 0, 100);
         time = (double)packet.data.info.stamp.sec + (double)packet.data.info.stamp.nsec * 1.0e-9;
     }
 
-    if(IMUadjust) {
+    if(mIMUadjust) {
         // check if latest IMU packet is within timeConstraintIMU_PC
         double IMUtime;
         Imu = imu();
@@ -1877,7 +1895,7 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
 
         IMUtime = (double)Imu.data.info.stamp.sec +(double)Imu.data.info.stamp.nsec * 1e-9;
         double deltaTime = abs(time-IMUtime);
-        if(deltaTime < timeConstraintIMU_PC) {
+        if(deltaTime < mIMUPCtimeConstraint) {
             adjustWithIMU = true;
             Quat.w = Imu.data.quaternion[0];
             Quat.x = Imu.data.quaternion[1];
@@ -1912,7 +1930,7 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
 
         if(adjustWithIMU) {
             normalizeQuaternion(Quat);
-            if(AdjustRollPitchOnly) {
+            if(mAdjustRollPitchOnly) {
                 // rotate roll and pitch only
                 Quaternion q_no_yaw = removeYaw(Quat);
                 rotateByQuaternion(q_no_yaw, p.x,p.y,p.z);
@@ -1931,6 +1949,7 @@ bool L2lidar::ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
             p.z,
             p.intensity,
             p.range,
+            p.raw_range,
             actualtime,
             p.ring
         });
@@ -2095,4 +2114,326 @@ void L2lidar::SetSystemTimeStamp(TimeStamp& stamp)
     unilidar_sdk2::getSystemTimeStamp(SystemTime);
     stamp.sec = SystemTime.sec;
     stamp.nsec = SystemTime.nsec;
+}
+
+//-----------------------------------------------------
+//  LoadCalibration()
+//-----------------------------------------------------
+bool L2lidar::LoadCalibration(const std::string& filename)
+{
+    ClearRangeCorrection();
+    if(mCalibration.LoadCalibration(filename)) {
+        mRangeCorrectionLUT.clear();
+        mRangeCorrectionLUT = mCalibration.GetRangeCorrectionLUT();
+        mRangeCorrectionLoaded = true;
+
+        // load the AlphaAngleLUT if found
+        mAlphaAngleLUTloaded = mCalibration.IsAlphaAngleLUTloaded();
+        if(mAlphaAngleLUTloaded) {
+            mAlphaAngleLUT = mCalibration.GetAlphaAngleLUT();
+        } else {
+            mAlphaAngleLUT.clear();
+        }
+
+        auto CalInfo = mCalibration.GetCalibrationInfo();
+        // L2 device ranges (calibration range handled elsewhere)
+        mMinRange_mm = CalInfo.MinRange; // mm
+        mMaxRange_mm = CalInfo.MaxRange; // mm
+        mMinTrustedRange_mm = CalInfo.MinTrustedRange; // mm
+        // restore overdide biases from calibration file
+        mThetaBiasOVR = CalInfo.ThetaAngleBias; // deg
+        mAlphaBiasOVR = CalInfo.AlphaAngleBias; // deg
+        mAlphaAngleStepOVR = CalInfo.AlphaAngleStepSize; // deg
+        mXiOVR = CalInfo.XiAngle; // deg
+        mBetaOVR = CalInfo.BetaAngle; // deg
+        mRangeBiasOVR = CalInfo.RangeBias; // mm
+        mRangeScaleOVR = CalInfo.RangeScale; // mm->m scaling
+    } else {
+        mRangeCorrectionLUT.clear();
+        mRangeCorrectionLoaded = false;
+        return false;
+    }
+    return true;
+}
+
+//-----------------------------------------------------------------------
+//***********************************************************************
+//
+//  SelectiveParseFromPacketToPointCloud()
+//
+//  This is derived from but not part of Unitree's SDK
+//  This has been added to aid in the collection a scan line calibration slices
+//  for 3d scans and to select a angular set of scans.
+//
+//  This can also be used to limit the accepted scan angle (set flatten to false)
+//  Example:  -45 degrees to 45 degrees would only keep data in a 90 angle
+//  in front of the L2
+//
+//  This collects points that are within a specified slow scan angle
+//  and flattens the scan to just x,z.  This generates a line spread function
+//  that shows the transfer function of range.
+//
+//  Requirements:
+//  Extended flat surface(s).  It can only provide the transfer function for the
+//  extent of the flat surface(s).
+//  Data collection may take awhile since there are only ~18 scans per revolution
+//  A minimum of 86 seconds for a dense non repeating slow scan angle
+//  Longer if additional noise data is required.  The narrower the scan angle the
+//  longer it will take.
+//
+// minAngle is in degrees for the xz plane
+// maxAngel is in degress for the xz plane
+//
+//  The returned point cloud is acutally just 2d
+//
+//  The Unitree L2 has a strange range for theta angle:
+//      2.07697224617 to 8.42355474160
+//
+//
+//-----------------------------------------------------------------------
+#define PI 3.14159265358979323846
+#define TWO_PI (2.0 * PI)
+
+//-----------------------------------------------------
+// helper functions for SelectiveParseFromPacketToPointCloud()
+//-----------------------------------------------------
+inline bool L2lidar::inAngularWindow(double theta,
+                                     const double StartAngle,
+                                     const double AngleWidth)
+{
+    // if width is 360 degrees or greater then everything is in range
+    if(AngleWidth >= TWO_PI) return true;
+
+    double d = theta - StartAngle;
+
+    d = std::fmod(d, TWO_PI);
+    if (d < 0.0)
+        d += TWO_PI;
+
+    return d <= AngleWidth;
+}
+
+//-----------------------------------------------------
+//  SelectiveParseFromPacketToPointCloud()
+//-----------------------------------------------------
+inline void L2lidar::SelectiveParseFromPacketToPointCloud(unilidar_sdk2::PointCloudUnitree &cloud,
+                                                          const LidarPointDataPacket &packet,
+                                                          bool use_system_timestamp)
+{
+    // Unitree provides the cal data as float
+    // but use double for calculations
+
+    int32_t RangeBias;
+    double RangeScale;
+    double AlphaBias;
+    double AlphaStep;
+    double ThetaBias;
+    double BetaAngle;
+    double XiAngle;
+    double a_axis_dist;
+    double b_axis_dist;
+    if(mOverideCalibration) {
+        // RangeBiasOvr is always -100 to -1000
+        RangeBias =  mRangeBiasOVR;
+        RangeScale = mRangeScaleOVR;
+        AlphaBias = mAlphaBiasOVR * DEG_TO_RAD;
+        AlphaStep = mAlphaAngleStepOVR * DEG_TO_RAD;
+        ThetaBias =  mThetaBiasOVR * DEG_TO_RAD;
+        BetaAngle = mBetaOVR * DEG_TO_RAD;
+        XiAngle = mXiOVR * DEG_TO_RAD;
+    } else {
+        // .range_biasBias is always -100 to -1000
+        RangeBias =  (int32_t)(packet.data.param.range_bias-0.5); // round to neaest mm, subraction because it is negative.
+        RangeScale = packet.data.param.range_scale;
+        AlphaBias = packet.data.param.alpha_angle_bias;
+        AlphaStep = packet.data.angle_increment;
+        ThetaBias = packet.data.param.theta_angle_bias;
+        BetaAngle = (double)packet.data.param.beta_angle;
+        XiAngle = (double)packet.data.param.xi_angle;
+    }
+
+    if(RangeBias > 0) RangeBias = 0;
+
+    if(mFlattenScanEnabled) {
+        BetaAngle = 0.0;
+        XiAngle = 0.0;
+        b_axis_dist = 0.0;
+        a_axis_dist = 0.0;
+    } else {
+        b_axis_dist = packet.data.param.b_axis_dist;
+        a_axis_dist = packet.data.param.a_axis_dist;
+    }
+
+    // convert minAngle,maxAngle to radians
+
+    double StartD = std::fmod(mStartScanAngle,360.0); // keep start in range 0-2*PI
+    double StartAngleRad = DEG_TO_RAD * StartD;
+    double AngleWidthRad = DEG_TO_RAD * mScanAngleWidth;
+
+    // scan info
+    const int num_of_points = packet.data.point_num;
+    const double time_step = (double) packet.data.time_increment;
+    const float scan_period = packet.data.scan_period;
+
+    // intermediate variables
+    const double sin_beta = sin(BetaAngle);
+    const double cos_beta = cos(BetaAngle);
+    const double sin_xi = sin(XiAngle);
+    const double cos_xi = cos(XiAngle);
+    const double cos_beta_sin_xi = cos_beta * sin_xi;
+    const double sin_beta_cos_xi = sin_beta * cos_xi;
+    const double sin_beta_sin_xi = sin_beta * sin_xi;
+    const double cos_beta_cos_xi = cos_beta * cos_xi;
+
+    // cloud init, time stamp,  this has been changed to nanoseconds since epoch
+    if (use_system_timestamp) {
+        cloud.stamp = unilidar_sdk2::getSystemTimeStampnsec() - (long long)((double)scan_period*1.0e9+0.5);
+    }else{
+        // this was changed from double to long long to maintain time precision
+        cloud.stamp = ((long long)packet.data.info.stamp.sec * 1000000000) +
+                      (long long)packet.data.info.stamp.nsec;
+    }
+    // rest of cloud init
+    cloud.id = 1;
+    cloud.ringNum = 1;
+    cloud.points.clear();
+    cloud.points.reserve(MAX_3DPOINTS_PER_FRAME);
+
+    // transform raw data to a pointcloud
+    auto &ranges = packet.data.ranges;
+    auto &intensities = packet.data.intensities;
+
+    double sin_alpha, cos_alpha, sin_theta, cos_theta;
+    double A, B, C;
+
+    unilidar_sdk2::PointUnitree point3d;
+    point3d.ring = 1; // this is never acutally used
+    bool enableRangeCorrection {false};
+    const std::vector<double>* RangeCorrectionLUT;
+    double range_min {0};
+    double range_max {65535};
+
+    enableRangeCorrection = mRangeCorrectionLoaded && mEnableRangeCorrection;
+    RangeCorrectionLUT = &mRangeCorrectionLUT;
+    range_min = mMinRange_mm; //mm
+    range_max = mMaxRange_mm; //mm
+
+    bool enableAlphaAngleLUT = mAlphaAngleLUTloaded && mEnableAlphaAngleCorrection;
+
+    double time_relative = 0.0;
+
+    double theta_cur = packet.data.com_horizontal_angle_start + ThetaBias;
+    double alpha_cur = packet.data.angle_min + AlphaBias;
+    double alphaUsed;
+
+    double theta_step;
+    if(!mFlattenScanEnabled) {
+        theta_step = packet.data.com_horizontal_angle_step;
+    } else {
+        // flatten
+        theta_step = 0.0;
+    }
+
+    for (int j = 0; j < num_of_points; j += 1, alpha_cur += AlphaStep,
+                                       theta_cur += theta_step, time_relative += time_step)
+    {
+        int32_t rangeI;
+        double range;
+
+        // if not within the specifed angle range ignore point
+        if(!inAngularWindow(theta_cur, StartAngleRad, AngleWidthRad)) {
+            continue;
+        }
+        // jump points beyond ranges[j] is in mm, range_min, range_max is in meters
+        if ( (float)ranges[j] < packet.data.range_min*1000.0 || (float)ranges[j] > packet.data.range_max*1000.0)
+        {
+            continue;
+        }
+
+        // skip invalid points
+        rangeI = (int32_t)ranges[j] + RangeBias;
+        if ((ranges[j] <= 1) || (rangeI < 0)) {
+            continue;
+        }
+
+        // jump points beyond range limit
+        range = (double)rangeI;
+        if (range < range_min || range > range_max) {
+            continue;
+        }
+
+        // calculate point range in float type
+        if(enableRangeCorrection) {
+            range = range + (*RangeCorrectionLUT)[rangeI];
+        }
+
+        range = RangeScale * range; // range _float is in meters
+
+        // use AlphaAngleLUT is enabled
+        if(enableAlphaAngleLUT) {
+            alphaUsed = mAlphaAngleLUT[j] + AlphaBias;
+        } else {
+            alphaUsed = alpha_cur;
+        }
+
+        // transform to XYZ coordinate
+        sin_alpha = sin((double)alphaUsed);
+        cos_alpha = cos((double)alphaUsed);
+
+        if(!mFlattenScanEnabled) {
+            sin_theta = sin((double)theta_cur);
+            cos_theta = cos((double)theta_cur);
+        } else {
+            sin_theta = sin((double)StartAngleRad+AngleWidthRad/2.0);  // collapse the scan to center of scan width
+            cos_theta = cos((double)StartAngleRad+AngleWidthRad/2.0);  // collapse the scan to center of scan width
+        }
+
+        A = (-cos_beta_sin_xi + sin_beta_cos_xi * sin_alpha) * range + b_axis_dist;
+        B = cos_alpha * cos_xi * range;
+        C = (sin_beta_sin_xi + cos_beta_cos_xi * sin_alpha) * range;
+
+        point3d.x = cos_theta * A - sin_theta * B;
+        point3d.y = sin_theta * A + cos_theta * B;
+        point3d.z = C + a_axis_dist;
+
+        // push back this point to cloud
+        point3d.intensity = intensities[j];
+        point3d.time = time_relative;  // this was changed to double
+
+        // always report original range also converted to meters
+        point3d.raw_range = (float)ranges[j]/(float)1000.0;
+
+        point3d.range = range; // calibrated range value
+        cloud.points.push_back(point3d);
+
+        mNumPointedConverted++;
+    }
+    return;
+}
+
+
+//--------------------------------------------------------
+//  ClearAlphaAngleLUT
+//--------------------------------------------------------
+void L2lidar::ClearAlphaAngleLUT()
+{
+    mAlphaAngleLUT.clear();
+    mAlphaAngleLUTloaded = false;
+}
+
+//--------------------------------------------------------
+//  GetAlphaAngleLUT
+//--------------------------------------------------------
+const std::vector<double>& L2lidar::GetAlphaAngleLUT() const noexcept
+{
+    return mAlphaAngleLUT;
+}
+
+//--------------------------------------------------------
+//  ClearRangeCorrection
+//--------------------------------------------------------
+void L2lidar::ClearRangeCorrection() {
+    mCalibration.ClearCalibration();
+    mRangeCorrectionLoaded = false;
+    mRangeCorrectionLUT.clear();
 }

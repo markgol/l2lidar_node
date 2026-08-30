@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(l2lidar_node
-        VERSION 0.5.0
+        VERSION 2.0.0
         LANGUAGES CXX
   )
 
@@ -30,24 +30,25 @@ find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
 # ============================
-# Qt 6.10 (force your install)
+# Qt 6
 # ============================
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-	set(QT610_PATH "/opt/Qt/6.10.2/gcc_64")	
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-	set(QT610_PATH "/opt/Qt/6.10.2/gcc_arm64")
-else()
-    set( QT610_PATH "Unknown architecture")
-endif()
+find_package(Qt6 REQUIRED COMPONENTS Core Network)
+message(STATUS "Qt6_VERSION=${Qt6_VERSION}")
+message(STATUS "Qt6_DIR=${Qt6_DIR}")
 
-list(PREPEND CMAKE_PREFIX_PATH
-  ${QT610_PATH}
-  ${QT610_PATH}/lib/cmake
+get_filename_component(
+    QT6_CMAKE_DIR
+    "${Qt6_DIR}"
+    ABSOLUTE
 )
 
-set(Qt6_DIR "${QT610_PATH}/lib/cmake/Qt6")
+get_filename_component(
+    QT_RUNTIME_DIR
+    "${QT6_CMAKE_DIR}/../.."
+    ABSOLUTE
+)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Network)
+message(STATUS "QT_RUNTIME_DIR=${QT_RUNTIME_DIR}")
 
 # ============================
 # Include directories
@@ -63,10 +64,13 @@ include_directories(
 set(SOURCES
   src/l2lidar_node.cpp
   L2lidarClass/src/L2lidar.cpp
+  L2lidarClass/src/L2calibration.cpp
 )
 
 set(HEADERS
   L2lidarClass/include/L2lidar.h
+  L2lidarClass/include/L2calibration.h
+  L2lidarClass/include/RangeCalSegments.h
   L2lidarClass/include/PCpoint.h
   L2lidarClass/include/unitree_lidar_protocolL2.h
   L2lidarClass/include/unitree_lidar_utilitiesL2.h
@@ -84,6 +88,7 @@ add_executable(l2lidar_node
   config/l2lidar_node.yaml
   launch/l2lidar.launch.py
   launch/l2lidar_with_rviz.launch.py
+  "config/Herman1 cal overrides.csv"
 )
 
 target_link_libraries(l2lidar_node
@@ -106,13 +111,6 @@ target_include_directories(l2lidar_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-# Embed an RPATH so the binary resolves to the Qt 6.10 install at runtime.
-# Without this, Ubuntu 24.04's apt-installed Qt 6.4 (in /usr/lib) is picked
-# up by the loader and the binary dies on the Qt_6.10 symbol version.
-#set_target_properties(l2lidar_node PROPERTIES
-#  BUILD_WITH_INSTALL_RPATH TRUE
-#  INSTALL_RPATH "${QT610_PATH}/lib"
-#)
 set_target_properties(l2lidar_node PROPERTIES
   BUILD_RPATH "\$ORIGIN/lib"
   BUILD_RPATH_USE_ORIGIN TRUE
@@ -122,8 +120,8 @@ set_target_properties(l2lidar_node PROPERTIES
 # ============================
 # Distribution
 #
-# Note: This is specific to Qt 6.10.2 build
-# It uses libicu v73 which is bundled with the Qt 6.10.2 distro
+# Note: This is specific to Qt 6.11.2 build
+# It uses libicu v73 which is bundled with the Qt 6.11.2 distro
 # This is in conflict with the Ubuntu libicu v74
 # The v73 shared libraries must be part of the distro
 # Files are copied to the dist folder inside the project build folder
@@ -147,24 +145,24 @@ add_custom_target(dist ALL
           ${DIST_DIR}/
 
   COMMAND ${CMAKE_COMMAND} -E copy
-          ${QT610_PATH}/lib/libQt6Core.so.6.10.2
+          $<TARGET_FILE:Qt6::Core>
           ${DIST_DIR}/lib/libQt6Core.so.6
 
   COMMAND ${CMAKE_COMMAND} -E copy
-          ${QT610_PATH}/lib/libQt6Network.so.6.10.2
+          $<TARGET_FILE:Qt6::Network>
           ${DIST_DIR}/lib/libQt6Network.so.6
 
   COMMAND ${CMAKE_COMMAND} -E copy
-          ${QT610_PATH}/lib/libicui18n.so.73
+          ${QT_RUNTIME_DIR}/libicui18n.so.73
           ${DIST_DIR}/lib/libicui18n.so.73
 
   COMMAND ${CMAKE_COMMAND} -E copy
-          ${QT610_PATH}/lib/libicuuc.so.73
+          ${QT_RUNTIME_DIR}/libicuuc.so.73
           ${DIST_DIR}/lib/libicuuc.so.73
 
   COMMAND ${CMAKE_COMMAND} -E copy
-          ${QT610_PATH}/lib/libicudata.so.73
-                ${DIST_DIR}/lib/libicudata.so.73
+          ${QT_RUNTIME_DIR}/libicudata.so.73
+          ${DIST_DIR}/lib/libicudata.so.73
 
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_SOURCE_DIR}/config

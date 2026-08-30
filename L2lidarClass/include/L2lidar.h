@@ -5,30 +5,45 @@
 //  Module: L2lidar.h
 //
 //  Purpose:
-//  Determine correct operation of the Unitreee L2 Lidar hardware
-//  and software.  Establish platform independent software protocols
-//  for using the L2 Lidar with its Ethernet interface.
+//
+//  To provide necesary software interfaces to control and
+//  receive and correct data for the Unitree L2 LiDAR.
+//
+//  This is to support applications such as diagnotic, point cloud viewer
+//  and ROS2 interfaces to the L2
 //
 //  Background:
-//  Unitree provides undoucmented software files in the form:
-//      include files
-//      example application files
-//      .a Archive Library
+//      Unitree provides marginally documented software files
+//      in the form:
+//          include files (open source)
+//          example application files (open source)
+//          .a Archive Library (proprietary)
 //
-//  The source files rely on an Archive library using POSIX I/O
-//  No source exists for the archive Library making it diffcult
-//  to debug or port usage of the L2 Lidar for other platforms.
-//  The hardware has 2 mutually exclusive communication interfaces:
-//      Ethernet using UDP
-//      Serial UART
-//  The serial UART is limited in speed and does not operate at
-//  the full sensor speed of 64K/sec sample points.
+//      The source files rely on an Archive library using POSIX I/O
+//      No source exists for the archive Library making it diffcult
+//      to debug or port usage of the L2 Lidar for other platforms.
 //
-//  Solution:
-//  This software skeleton was created using directed ChatGPT AI
-//  conversation targeting a QT Creator development platform.
-//  It reads UPD packets from the L2, categorizes them, performs
-//  error detection for bad packets (lost), live point cloud display.
+//      The hardware has 2 mutually exclusive communication interfaces:
+//          Ethernet using UDP
+//          Serial UART
+//
+//  Observations:
+//      The L2 has both documented and undocumented packet used to transmit
+//      and receive data with the L2 and a host computer.  Builtin calibration
+//      calibration values are not inconsistent at minimizing the distortion
+//      in the converted point cloud.  The IMU does not return reliable
+//      angles.  The L2 has considerable gyroscopic induced vibration that
+//      requires careful mounting in order to minimize its affect on both
+//      point cloud and IMU data.  The L2 has a timebase that has been
+//      measured at approx 1/2 realtime.
+//
+//  Current status:
+//      Implementation of class verified using UDP interface only.
+//      Serial UART impementation is being explored but not included.
+//      Working on integration and use of this class in support of ROS2
+//      as substitute for Unitree's SDK proprietary archive library.
+//      Implements a calibration strategy to correct range data and
+//      override builtin calibration values.
 //
 //  V0.1.0  2025-12-27  compilable skeleton created by ChatGPT
 //  V0.2.0  2026-01-02  Documentation, start of debugging
@@ -127,15 +142,54 @@
 //                          particularly after L2disconnect and L2connect when sync to host setting
 //                          have changed.
 //  V1.3.5  2026-06-21  Added optional parameter for gateway IP address and subnet mask in setL2UDPconfig()
+//  V1.3.6  2026-07-11  Changed PCpoint to include both calibrated range and raw range value.
+//                      Changed return of range value from parseFromPacketToPointCloud()
+//                          and parseFromPacketPointCloud2D() to be actual range from L2.
+//                          The raw range value from the L2 is returned in a PCpoint field called raw_range.
+//                      Complimentary changes also made in the unitree_lidar_utilitiesL2.h file
+//                      Added SelectiveParseFromPacketToPointCloud() for 3d scans
+//                          This is not part of the original unitree_lidar_utilities.h SDK
+// V2.0.0RC1 2026-08-18 Adding range calibration class to be used in the L2lidar class
+//                          This will align with L2diagnostics V2.0.0
+//                          It will only include the application of the range correction methods
+//                          It does not include the creation and calibration procedures
+//                            that generates the calibration dataset used in the application of
+//                            range correction methods.
+//                      Updated some of the private class variables to start with m...
+//                      Update to the API involving the calibration override settings
+//                          Moved these into the L2lidarClass
+//                          Override internal L2 biases for:
+//                              Range Bias, Range Scale
+//                              ThetaAngle Bias, Alpha Angle Bias,
+//                              Beta angle, Xi angle
+//                          API interface for the 3d point cloud parser
+//                              ConvertL2data2pointcloud()
+//                          Updates for 2d scan mode conversion no longer actively supported
+//  V2.0.1  2026-08-24  Implemented application of the alpha angle LUT
+//                      Added Alpha Angle step size override
+//                      Removed unused code
+//  V2.1.0  2026-08-27  Changed calibration file so that range correction
+//                          optional.  This allows just metadata to be saved
+//                          which includes the overrride biases.
+//                      Corrected logic error for EnableAlphaAngleCorrection
+//                      Renamed LoadRangeCalibration() to LoadCalibration to reflect
+//                          optional use of Range Correction
 //
 //--------------------------------------------------------
 
 //--------------------------------------------------------
-// This uses the following Unitree L2 sources modules:
+//--------------------------------------------------------
+// This uses modified version of the following Unitree L2 open sources:
 //      unitree_lidar_protocol.h
 //      unitree_lidar_utilities
+// They have been modifed from the original sources
+// to correct for errors, missing definitions and
+// inconsistencies. These have been minor in most
+// instances.
+//
 // The orignal source can be found at:
 //      https://github.com/unitreerobotics/unilidar_sdk2
+//      Copyright (c) 2024, Unitree Robotics
 //      under License: BSD 3-Clause License (see files)
 //
 // Corrections/additions have been made to these 2 files
@@ -184,6 +238,7 @@
 #include <unordered_map>
 #include "quaternion.h"
 #include "PCpoint.h"
+#include "L2calibration.h"
 
 // this is required, DO NOT REMOVE
 #pragma pack(push, 1)
@@ -211,7 +266,8 @@ public:
     explicit L2lidar(QObject* parent = nullptr);
 
     // Accessors for external data acces in other threads
-    // such as a timer based GUI
+
+    // latest packet information requests
 
     const LidarAckData ack() const {
         QMutexLocker locker(&PacketMutex);
@@ -287,7 +343,12 @@ public:
     uint64_t totalIMUretrieved() const { return totalIMUretrieved_; }
     uint64_t totalPCretrieved() const { return totalPCretrieved_; }
 
+    // number fo scan processed for point cloud
+    uint64_t NumPointsConverted() const { return mNumPointedConverted; }
+    void ClearNumPointsConverted() { mNumPointedConverted = 0;}
+
     // L2 commands
+
     bool GetL2Params(void);
     bool GetWorkMode(void);
     bool LidarGetVersion(void);
@@ -336,32 +397,94 @@ public:
     void EnableL2TSsync(bool enable);
     void SetL2TSsyncRate(uint32_t Rate);
 
-    // L2 calibration override
-    void EnableCalibrationOVR(bool Override) {  // true: use override calibration
-        OverideCalibration = Override;          // false: use internal calibration
+    // L2 calibration override (RangeScale and RangeBias)
+    void EnableCalibrationOVR(bool Override) {  // true: use calibration overrides
+        mOverideCalibration = Override;         // false: use internal L2 calibration
     }
 
-    void SetCalibrationOVR(double Scale, double Offset) {
-        RangeScaleOVR = Scale;
-        RangeBiasOVR = Offset;
+    bool IsCalibrationOVRenabled() { // true: using clibration overrides
+        return mOverideCalibration ; // false: using internal L2 calibration
     }
 
-    bool GetCalibration(double& Scale, double& Offset){
-        // This returns true if calibration override is in effect
-        //      Scale = override calibration for Scale
-        //      Offset =  override calibration for Offset
-        // This returns false if calibration used is the internal calibration
-        //      Scale = not valid
-        //      Offset = not valid
-        if(OverideCalibration) {
-            Scale = RangeScaleOVR;
-            Offset = RangeBiasOVR;
-        } else {
-            Scale = 0.000978;
-            Offset = -365.625;
-        }
-        return OverideCalibration;
+    void SetRangeScaleOVR(double Scale) {mRangeScaleOVR = Scale;}
+    void SetRangeBiasOVR(int32_t Offset) {mRangeBiasOVR = Offset;}
+    void SetThetaAngleBiasOVR(double angle) {mThetaBiasOVR = angle;} // in degrees
+    void SetAlphaAngleBiasOVR(double angle) {mAlphaBiasOVR = angle;} // in degrees
+    void SetAlphaAngleStepOVR(double angle) {mAlphaAngleStepOVR = angle;} // in degrees
+    void SetBetaAngleOVR(double angle) {mBetaOVR = angle;} // in degrees
+    void SetXiAngleOVR(double angle) {mXiOVR = angle;} // in degrees
+
+    double GetRangeScaleOVR() {return mRangeScaleOVR;}
+    int32_t GetRangeBiasOVR() {return mRangeBiasOVR;}
+    double GetThetaAngleBiasOVR() {return mThetaBiasOVR;} // in degrees
+    double GetAlphaAngleBiasOVR() {return mAlphaBiasOVR;} // in degrees
+    double GetAlphaAngleStepOVR() {return mAlphaAngleStepOVR;} // in degrees
+    double GetBetaAngleOVR() {return mBetaOVR;} // in degrees
+    double GetXiAngleOVR() {return mXiOVR;} // in degrees
+
+    // L2 scan paramters
+    void EnableFlattenScan(bool p) {mFlattenScanEnabled = p;}
+    bool IsFlattenScanEnabled() {return mFlattenScanEnabled ;}
+
+    // double mStartScanAngle {0.0};
+    double GetStartScanAngle() {return mStartScanAngle;} // in degrees
+    void SetStartScanAngle(double p) {mStartScanAngle = p;}
+
+    // double mScanAngleWidth {360};
+    double GetScanAngleWidth() {return mScanAngleWidth;} // in degrees
+    void SetScanAngleWidth(double p) {mScanAngleWidth = p;}
+
+    // L2 non-linear range calibration
+    void EnableRangeCorrection(bool Correction) { // true: apply non-linear range correction
+        mEnableRangeCorrection  = Correction;     // false: use just linear correction (RangeBias, RangeScale)
     }
+
+    // load range calibration file
+    bool LoadCalibration(const std::string& filename);
+
+    // L2 range correction clear
+    void ClearRangeCorrection();
+    // L2 range correction loaded
+    bool IsRangeCorrectionLoaded() {return mRangeCorrectionLoaded;}
+
+    // L2 non-linear range calibration
+    // true: apply non-linear range correction
+    // false: use just linear correction
+    bool IsRangeCorrectionEnabled() {return mEnableRangeCorrection ;}
+
+    const std::vector<std::string> GetCalibrationWarnings() {
+        return mCalibration.GetWarnings();
+    };
+
+    const std::vector<std::string> GetCalibrationErrors() {
+        return mCalibration.GetErrors();
+    };
+
+    const CalibrationInfo& GetCalibrationInfo() const noexcept
+    {
+        return mCalibration.GetCalibrationInfo();
+    };
+    // L2 alpha angle LUT
+    bool IsAlphaAngleLUTloaded() {return mAlphaAngleLUTloaded;}
+    bool IsAlphaAngleLUTenabled() {return mEnableAlphaAngleCorrection ;}
+    void EnableAlphaAngleLUT(bool p) {mEnableAlphaAngleCorrection = p;}
+    void ClearAlphaAngleLUT();
+    const std::vector<double>& GetAlphaAngleLUT() const noexcept;
+
+    // IMU adjustment to point cloud
+    // true: apply IMU adjustment
+    // false: do not apply IMU correction
+    bool IsIMUadjustEnabled() {return mIMUadjust ;}
+    void EnableIMUadjust(bool p) {mIMUadjust = p;}
+
+    // IMU adjustment to point cloud
+    // true: apply IMU adjustment
+    // false: do not apply IMU correction
+    bool IsAdjustRollPitchOnlyEnabled() {return mAdjustRollPitchOnly ;}
+    void EnableAdjustRollPitchOnly(bool p) {mAdjustRollPitchOnly = p;}
+
+    double GetIMUPCtimeConstraint() {return mIMUPCtimeConstraint;}
+    void SetIMUPCtimeConstraint(double p) {mIMUPCtimeConstraint = p;}
 
     // latency measurement
     void EnableLatencyMeasure(bool enable);
@@ -375,15 +498,21 @@ public:
     void LidarSetCmdConfig(QString srcIP, uint32_t srcPort,
                            QString dstIP, uint32_t dstPort);
 
-
+    // (Dis)connectL2
+    bool IsL2connected() const { return mConnected;}
     bool ConnectL2();  // bind to create, bind socket, connect callback for decode
     void DisconnectL2();   // close socket
 
     // convert point frame data from L2 to point cloud
-    bool ConvertL2data2pointcloud(Frame& frame, bool Frame3D,
-                                  bool IMUadjust,bool AdjustRollPitchOnly,
-                                  bool CalOVR, double CalScale, double CalBias,
-                                  double timeConstraintIMU_PC = 0.07);
+    bool ConvertL2data2pointcloud(Frame& frame, bool Frame3D);
+
+    // get/set minRange, MaxRange, minTrustedRange
+    void SetMinRange_mm(double p) {mMinRange_mm = p;}
+    void SetMaxRange_mm(double p) {mMaxRange_mm = p;}
+    void SetMinTrustedRange_mm(double p) {mMinTrustedRange_mm = p;}
+    double getMinRange_mm() {return mMinRange_mm;}
+    double getMaxRange_mm() {return mMinRange_mm;}
+    double getMinTrustedRange_mm() {return mMinTrustedRange_mm;}
 
 signals:
     void ackReceived();
@@ -446,9 +575,19 @@ private: // functions
     void FixTimeStamp(TimeStamp& stamp);
     void SetSystemTimeStamp(TimeStamp& stamp);
 
+    inline bool inAngularWindow(double theta,
+                            const double StartAngle,
+                                const double AngleWidth);
 
+    inline void SelectiveParseFromPacketToPointCloud(
+        unilidar_sdk2::PointCloudUnitree &cloud,
+        const LidarPointDataPacket &packet,
+        bool use_system_timestamp = false
+        );
 
 private: // variables
+    L2calibration mCalibration;
+
     // mutex for critical packet access while copying packet
     mutable QMutex  PacketMutex;
 
@@ -493,6 +632,9 @@ private: // variables
     uint64_t totalOther_{0};
     uint64_t totalIMUretrieved_{0};
     uint64_t totalPCretrieved_{0};
+
+    // number of points processed for point cloud
+    uint64_t mNumPointedConverted {0};
 
     // QudpSocket parmameters
     // These should only be a reflection of L2
@@ -552,8 +694,38 @@ private: // variables
     QString stringErrorCOMM {};
     bool mConnected {false}; // set true when connected to L2
 
+    // L2 IMU adjust point cloud
+    bool mIMUadjust {false};
+    bool mAdjustRollPitchOnly {true};
+    double mIMUPCtimeConstraint {0.07};
+
     // L2 calibration
-    double RangeScaleOVR {.000978};
-    double RangeBiasOVR {-365.625};
-    bool OverideCalibration {false};
+    double mRangeScaleOVR {.001};
+    int32_t mRangeBiasOVR {-500};
+    double mAlphaBiasOVR {1.5};
+    double mAlphaAngleStepOVR {0.602};
+    double mThetaBiasOVR {120.0};
+    double mBetaOVR {0.0};
+    double mXiOVR {0.0};
+    bool mOverideCalibration {false};
+
+    // L2 scan parameters
+    bool mFlattenScanEnabled {false}; // only allow capture of point clouds close to xz plane
+    double mStartScanAngle {0.0};
+    double mScanAngleWidth {360};
+
+    // L2 min ranges, max ranges
+    double mMinRange_mm{0.0};
+    double mMaxRange_mm {65535.0};
+    double mMinTrustedRange_mm {-1.0};
+
+    // L2 Range non-linear range correction
+    bool mEnableRangeCorrection {false};
+    std::vector<double> mRangeCorrectionLUT;
+    bool mRangeCorrectionLoaded {false};
+
+    // L2 Alpha angle LUT
+    bool mEnableAlphaAngleCorrection {false};
+    bool mAlphaAngleLUTloaded {false};
+    std::vector<double> mAlphaAngleLUT;
 };

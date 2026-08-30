@@ -114,17 +114,16 @@
 //                          Add config param for roll,ptich only with IMUadjust
 //                          Add config param for UseSystemNow timestamps
 //                          Add covariance matrix for IMU quaternion
-//		V0.5.0 2026-06-24	Updated to L2lidarClass V1.3.5
-//						Single-frame geometry refactor (breaking change).
-//						Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`).
-//						Auto-derived IMU frame from `cloud_frame`.
-//						Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement.
-//						See **Migration from V0.3.x to V0.5** in the README.md.
-//						CMakeLists.txt changed to copy additional files to executable standalone folders.
-//						package.xml version updated to V0.5.0
 //
+//      V2.0.0  2026-08-29  This will be the first production release.
+//                          Updated to L2lidar class V2.1.0
+//                          Added complete set of calibration override variable
+//                          No further support for 2d workmode is planned, current support
+//                              for it is not planned in any future updates.
+//                          Added support for calibration file which contains
+//                              calibration parameter overrides, range correction, elevation angle correction
+//                          Added many of calibration overrides as dynamics
 //
-//      V1.0.0  2026-0x-xx  This will be the first production release.
 //
 //  Note: class member variables end with an _
 //--------------------------------------------------------
@@ -164,19 +163,6 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<std::string>("host_ip", "192.168.1.2");
     declare_parameter<int>("host_port", 6201);
 
-    // timebase correction controls
-    declare_parameter<bool>("enable_l2_time_correction", true);
-    declare_parameter<bool>("enable_l2_host_sync", true);
-    declare_parameter<int>("l2_sync_rate_ms", 50);
-    declare_parameter<int>("timeScaleNum", 2);
-    declare_parameter<int>("timeScaleDenom", 1);
-    declare_parameter<bool>("UseSystemTimeTS", false);
-
-    // UDP latency measurement
-    // normally there would be no need to enable
-    // mostly used as diagnostic
-    declare_parameter<bool>("enable_latency_measure", false);
-
     // V0.5: single-frame topology. cloud_frame serves as both the URDF
     // mounting reference and the cloud-data origin (per Unitree spec,
     // these are the same physical frame — see README "Coordinate Frames").
@@ -190,45 +176,24 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<std::string>("cloud_frame", "");
     declare_parameter<bool>("publish_tf", true);
 
-    // type of point cloud data expected
-    declare_parameter<bool>("frame3d", true);
-
     // adjust point cloud data using the gravity algined IMU packet pose
-    // This does not correct yaw only roll and pitch
+    bool imu_adjust;
     declare_parameter<bool>("imu_adjust", false);
+    get_parameter("imu_adjust", imu_adjust);
+    lidar_.EnableIMUadjust(imu_adjust);
+
+    // This does not correct yaw only roll and pitch
+    bool imuRollPitchOnly;
     declare_parameter<bool>("imuRollPitchOnly", true);
+    get_parameter("imuRollPitchOnly", imuRollPitchOnly);
+    lidar_.EnableAdjustRollPitchOnly(imuRollPitchOnly);
 
-    // override the L2 internal calibration for RangeScale and RangeBias
-    declare_parameter<bool>("EnableCalRangeOVR", false);
-    declare_parameter<double>("calRangeScale", 0.000978);
-    declare_parameter<double>("calRangeBias", -365.625);
 
-    // set the watchdog timer to timeout if no data is received from the L2
-    // for this length of time.  This will cause the node to quit
-    declare_parameter<int>("watchdog_timeout_ms", 35000);
-
-    // number of L2 frames to aggregate when publishing the point cloud data
-    // no aggregation is set to less then 2
-    declare_parameter<int>("aggregateNframes", 38);
-
-    // IMU publishing config params
-    declare_parameter<bool>("enable_IMU_publishing", true);
-    declare_parameter<double>("accel_x_covar", 0.01);
-    declare_parameter<double>("accel_y_covar", 0.01);
-    declare_parameter<double>("accel_z_covar", 0.01);
-    declare_parameter<double>("gyro_x_covar", 0.000025);
-    declare_parameter<double>("gyro_y_covar", 0.000025);
-    declare_parameter<double>("gyro_z_covar", 0.0000002);
-    declare_parameter<double>("roll_covar", 4.9e-9); // this variance in radians not stddev in degrees
-    declare_parameter<double>("pitch_covar", 4.9e-9);// this variance in radians not stddev in degrees
-    declare_parameter<double>("yaw_covar", 10.0); // large because yaw is not reliable
-
-    // Topic IDs for publishing
-    declare_parameter<std::string>("point_cloud_topic_id", "/points");
-    declare_parameter<std::string>("imu_topic_id", "/imu/data");
-
-    // disable node timeout if L2 is set for standby on power up
-    declare_parameter<bool>("standby_on_powerup_enabled", false);
+    // get override calibration parameters
+    bool EnableCalibrationOVR;
+    declare_parameter<bool>("EnableCalibrationOVR", false);
+    get_parameter("EnableCalibrationOVR", EnableCalibrationOVR);
+    lidar_.EnableCalibrationOVR(EnableCalibrationOVR);
 
     // ---------------------------------------
     // Now get parameters from config file
@@ -275,39 +240,179 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     // get time correction and timebase syncing parameters
     bool latency;
-    int sync_rate;
 
-    get_parameter("UseSystemTimeTS", UseSystemTimeTS_);
+    // Use sytem timestamp rather than L2 timestamp for packets
+    bool UseSystemTimeTS;
+    declare_parameter<bool>("UseSystemTimeTS", false);
+    get_parameter("UseSystemTimeTS", UseSystemTimeTS);
+    lidar_.SetUseSystemNowTimestamps(UseSystemTimeTS);
+
+    // timebase update from host to L2 controls
+    declare_parameter<bool>("enable_l2_time_correction", true);
     get_parameter("enable_l2_time_correction", time_corr_);
+
+    declare_parameter<bool>("enable_l2_host_sync", true);
     get_parameter("enable_l2_host_sync", host_sync_);
 
+    // timestamp correction settings
     int timeScaleNum;
     int timeScaleDenom;
+    declare_parameter<int>("timeScaleNum", 2);
     get_parameter("timeScaleNum", timeScaleNum);
+    declare_parameter<int>("timeScaleDenom", 1);
     get_parameter("timeScaleDenom", timeScaleDenom);
-    timeScaleNum_ = timeScaleNum;
-    timeScaleDenom_ = timeScaleDenom;
+    lidar_.SetL2TimeScale(timeScaleNum,timeScaleDenom);
 
-    get_parameter("l2_sync_rate_ms", sync_rate);
+    // UDP latency measurement
+    // normally there would be no need to enable
+    // mostly used as diagnostic
+    declare_parameter<bool>("enable_latency_measure", false);
     get_parameter("enable_latency_measure", latency);
 
 	// get point cloud parameters
-	
+
+    // type of point cloud data expected
+    declare_parameter<bool>("frame3d", true);
     get_parameter("frame3d", frame3d_);
-    get_parameter("imu_adjust", imu_adjust_);
-    get_parameter("imuRollPitchOnly", imuRollPitchOnly_);
 
-    // get override calibration parameters
-    get_parameter("EnableCalRangeOVR", EnableCalRangeOVR_);
-    get_parameter("calRangeScale", calRangeScale_);
-    get_parameter("calRangeBias", calRangeBias_);
+    //---------------------------------------------------------------------
+    // V2.0.0  New dynamic parameters which also can be set by the config.yaml file
+    //---------------------------------------------------------------------
+    // override the L2 internal calibration for RangeScale and RangeBias
 
-    lidar_.SetCalibrationOVR(calRangeScale_, calRangeBias_);
-    lidar_.EnableCalibrationOVR(EnableCalRangeOVR_);
-    lidar_.SetL2TimeScale(timeScaleNum_,timeScaleDenom_);
-    lidar_.SetUseSystemNowTimestamps(UseSystemTimeTS_);
+    // calRangeScale
+    double calRangeScale;
+    declare_parameter<double>("calRangeScale", 0.000978);
+    get_parameter("calRangeScale", calRangeScale);
+    lidar_.SetRangeScaleOVR(calRangeScale);
+
+    // calRangeBias
+    double RangeBias;
+    declare_parameter<double>("RangeBias", -365.625);
+    get_parameter("RangeBias", RangeBias);
+    lidar_.SetRangeBiasOVR(RangeBias);
+
+    double MinRange_mm;
+    declare_parameter<double>("MinRange_mm", 150.0);
+    get_parameter("MinRange_mm", MinRange_mm);
+    lidar_.SetMinRange_mm(MinRange_mm);
+
+    double MaxRange_mm;
+    declare_parameter<double>("MaxRange_mm", 40000.0);
+    get_parameter("MaxRange_mm", MaxRange_mm);
+    lidar_.SetMaxRange_mm(MaxRange_mm);
+
+    double AlphaAngleStep;
+    declare_parameter<double>("AlpaAngleStep", 0.602);
+    get_parameter("AlpaAngleStep", AlphaAngleStep);
+    lidar_.SetAlphaAngleStepOVR(AlphaAngleStep);
+
+    double AlphaAngleBias;
+    declare_parameter<double>("AlphaAngleBias", 1.15);
+    get_parameter("AlphaAngleBias", AlphaAngleBias);
+    lidar_.SetAlphaAngleBiasOVR(AlphaAngleBias);
+
+    // calBetaAngle
+    double BetaAngle;
+    declare_parameter<double>("BetaAngle", 0.25);
+    get_parameter("BetaAngle", BetaAngle);
+    lidar_.SetBetaAngleOVR(BetaAngle);
+
+    // calXiAngle
+    double XiAngle;
+    declare_parameter<double>("XiAngle", 0.20);
+    get_parameter("XiAngle", XiAngle);
+    lidar_.SetXiAngleOVR(XiAngle);
+
+    // calThetaAngleBias
+    double ThetaAngleBias;
+    declare_parameter<double>("ThetaAngleBias", 120.0);
+    get_parameter("ThetaAngleBias", ThetaAngleBias);
+    lidar_.SetThetaAngleBiasOVR(ThetaAngleBias);
+
+    // ScanAngleWidth
+    double ScanAngleWidth;
+    declare_parameter<double>("ScanAngleWidth", 360.0);
+    get_parameter("ScanAngleWidth", ScanAngleWidth);
+    lidar_.SetScanAngleWidth(ScanAngleWidth);
+
+    // StartScanAngle
+    double StartScanAngle;
+    declare_parameter<double>("StartScanAngle", 0.0);
+    get_parameter("StartScanAngle", StartScanAngle);
+    lidar_.SetStartScanAngle(StartScanAngle);
+
+    // FlattenScan
+    bool FlattenScan;
+    declare_parameter<bool>("FlattenScan", false);
+    get_parameter("FlattenScan", FlattenScan);
+    lidar_.EnableFlattenScan(FlattenScan);
+
+    // EnableRangeCorrection
+    bool EnableRangeCorrection;
+    declare_parameter<bool>("EnableRangeCorrection", false);
+    get_parameter("EnableRangeCorrection", EnableRangeCorrection);
+    lidar_.EnableRangeCorrection(EnableRangeCorrection);
+
+    // EnableAlphaAngleLUT
+    bool EnableAlphaAngleLUT;
+    declare_parameter<bool>("EnableAlphaAngleLUT", false);
+    get_parameter("EnableAlphaAngleLUT", EnableAlphaAngleLUT);
+    lidar_.EnableAlphaAngleLUT(EnableAlphaAngleLUT);
+
+    // MinRangeTrusted
+    double MinTrustedRange_mm;
+    declare_parameter<double>("MinTrustedRange_mm", 150.0);
+    get_parameter("MinTrustedRange_mm", MinTrustedRange_mm);
+    lidar_.SetMinTrustedRange_mm(MinTrustedRange_mm);
+
+    //==============================================================================
+    // CalibrationFile
+    //  This must be done after override are initialized so they do not overwrite
+    //  the calibration file settings for the overrides
+    //  The calibration file settings takes precedence over the config.yaml file
+    //  settings.
+    //
+    //==============================================================================
+    std::string CalibrationFile;
+    declare_parameter<std::string>("CalibrationFile", "");
+    get_parameter("CalibrationFile", CalibrationFile);
+    if(CalibrationFile!="") { // check no file specified
+        if(!lidar_.LoadCalibration(CalibrationFile)) {
+            RCLCPP_ERROR(get_logger(), "LoadCalibration failed: %s", CalibrationFile.c_str());
+            for (const auto& message : lidar_.GetCalibrationErrors())
+            {
+                RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+            }
+            for (const auto& message : lidar_.GetCalibrationWarnings())
+            {
+                RCLCPP_WARN(get_logger(), "%s", message.c_str());
+            }
+        } else {
+            RCLCPP_INFO(get_logger(), "Loaded Calibration file: %s", CalibrationFile.c_str());
+        }
+    }
+
+
+    //---------------------------------------------------------------------
+    // V2.0.0 New parameters which also can be set by the config.yaml file
+    //---------------------------------------------------------------------
+
+    // lidar_.SetIMUPCtimeConstraint(0.070);
+    double TimeConstraint;
+    declare_parameter<double>("IMUPCtimeConstraint", false);
+    get_parameter("IMUPCtimeConstraint", TimeConstraint);
+    lidar_.SetIMUPCtimeConstraint(TimeConstraint);
+
+    //=============================================================================================
+    // The function lidar_.SetCalibrationOVR(calRangeScale_, calRangeBias_); is depracted in V2.0.0
+    // use the l2lidar class SetRangeScale() and SetRangeBias() methods to replace this
+    //=============================================================================================
 
     // --------- Watchdog timer settings---------------
+    // set the watchdog timer to timeout if no data is received from the L2
+    // for this length of time.  This will cause the node to quit
+    declare_parameter<int>("watchdog_timeout_ms", 35000);
     get_parameter("watchdog_timeout_ms", watchdog_timeout_ms_);
     last_imu_time_.start();
     last_pc_time_.start();
@@ -318,34 +423,59 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     watchdog_timer_.start(500);  // check twice per second
 
     // ---------------- point cloud -------------------
+
+    // number of L2 frames to aggregate when publishing the point cloud data
+    // no aggregation is set to less then 2
+    declare_parameter<int>("aggregateNframes", 38);
     get_parameter("aggregateNframes", aggregateNframes_);
 
-    // IMU publishing
+    // IMU publishing config params
+    declare_parameter<bool>("enable_IMU_publishing", true);
     get_parameter("enable_IMU_publishing", enable_IMU_publishing_);
-    get_parameter("accel_x_covar", accel_x_covar_);
-    get_parameter("accel_y_covar", accel_y_covar_);
-    get_parameter("accel_z_covar", accel_z_covar_);
-    get_parameter("gyro_x_covar", gyro_x_covar_);
-    get_parameter("gyro_y_covar", gyro_y_covar_);
-    get_parameter("gyro_z_covar", gyro_z_covar_);
-    get_parameter("roll_covar", roll_covar_);
-    get_parameter("pitch_covar", pitch_covar_);
-    get_parameter("yaw_covar", yaw_covar_);
 
-    // get UDP parameters, these are local
+    get_parameter("accel_x_covar", accel_x_covar_);
+    declare_parameter<double>("accel_x_covar", 0.01);
+
+    get_parameter("accel_y_covar", accel_y_covar_);
+    declare_parameter<double>("accel_y_covar", 0.01);
+
+    get_parameter("accel_z_covar", accel_z_covar_);
+    declare_parameter<double>("accel_z_covar", 0.01);
+
+    get_parameter("gyro_x_covar", gyro_x_covar_);
+    declare_parameter<double>("gyro_x_covar", 0.000025);
+
+    get_parameter("gyro_y_covar", gyro_y_covar_);
+    declare_parameter<double>("gyro_y_covar", 0.000025);
+
+    get_parameter("gyro_z_covar", gyro_z_covar_);
+    declare_parameter<double>("gyro_z_covar", 0.0000002);
+
+    get_parameter("roll_covar", roll_covar_);
+    declare_parameter<double>("roll_covar", 4.9e-9); // this variance in radians not stddev in degrees
+
+    get_parameter("pitch_covar", pitch_covar_);
+    declare_parameter<double>("pitch_covar", 4.9e-9);// this variance in radians not stddev in degrees
+
+    get_parameter("yaw_covar", yaw_covar_);
+    declare_parameter<double>("yaw_covar", 10.0); // large because yaw is not reliable
+
+    // Topic IDs for publishing
     std::string point_cloud_topic_id, imu_topic_id;
+    declare_parameter<std::string>("point_cloud_topic_id", "/points");
     get_parameter("point_cloud_topic_id", point_cloud_topic_id);
+    declare_parameter<std::string>("imu_topic_id", "/imu/data");
     get_parameter("imu_topic_id", imu_topic_id);
 
     // disable node timeout if L2 is set for standby on power up
     bool standby_on_powerup_enabled;
+    declare_parameter<bool>("standby_on_powerup_enabled", false);
     get_parameter("standby_on_powerup_enabled", standby_on_powerup_enabled);
     // only need to stop the watchdop timer if this is true
     // watchdog_timer_ will not be started until a start service command is sent
     if(standby_on_powerup_enabled){
         watchdog_timer_.stop();
     }
-
 
     //---------------------------------------------------
     // publishing initialization
@@ -376,7 +506,11 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     lidar_.EnableL2TSsync(host_sync_);
 
     // set the peroidicity of the host to L2 time sync
+    int sync_rate;
+    declare_parameter<int>("l2_sync_rate_ms", 50);
+    get_parameter("l2_sync_rate_ms", sync_rate);
     lidar_.SetL2TSsyncRate(sync_rate);
+
     // enable/disable UDP RTT latency measurements
     lidar_.EnableLatencyMeasure(latency);
 
@@ -573,9 +707,14 @@ void L2LidarNode::onPointCloudReceived()
 
     last_pc_time_.restart(); // restart watchdog
 
+    //***********************************************************
+    // This has beeen depracated in V2.0.0
+    // if (!lidar_.ConvertL2data2pointcloud(frame, frame3d_, imu_adjust_, imuRollPitchOnly_,
+    //                                      EnableCalRangeOVR_,calRangeScale_,calRangeBias_))
+    //     return;
+    //***********************************************************
     Frame frame;
-    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d_, imu_adjust_, imuRollPitchOnly_,
-                                         EnableCalRangeOVR_,calRangeScale_,calRangeBias_))
+    if (!lidar_.ConvertL2data2pointcloud(frame, frame3d_))
         return;
 
     if (frame.empty())
@@ -742,10 +881,12 @@ rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
     const std::vector<rclcpp::Parameter> &params)
 {
     for (const auto &p : params) {
+        // imu_adjust
         if (p.get_name() == "imu_adjust") {
             bool flag = p.as_bool();
-            imu_adjust_ = flag;
+            lidar_.EnableIMUadjust(flag);
         }
+        // aggregateNframes
         else if (p.get_name() == "aggregateNframes") {
             int nFrames = p.as_int();
             if (nFrames < 0 || nFrames > 4000) {
@@ -753,25 +894,95 @@ rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
             }
             aggregateNframes_ = nFrames;
         }
+        // EnableCalRangeOVR
         else if (p.get_name() == "EnableCalRangeOVR") {
             bool flag = p.as_bool();
-            EnableCalRangeOVR_= flag;
-           //new_cfg->keyframe_translation_thresh = t;
-        } else if (p.get_name() == "calRangeScale") {
+            lidar_.EnableCalibrationOVR(flag);
+        }
+        // calRangeScale
+        else if (p.get_name() == "calRangeScale") {
             double var = p.as_double();
             if (var < 0.00025 || var > 0.002) {
                 return paramFail("calRangeScale out of range: 0.00025 - 0.002");
             }
-            calRangeScale_ = var;
-        } else if (p.get_name() == "calRangeBias") {
+            lidar_.SetRangeScaleOVR(var);
+        }
+        // calRangeBias
+        else if (p.get_name() == "calRangeBias") {
             double var = p.as_double();
             if (var > 0.0 || var < -1000.0 ) return paramFail("calRangeBias out of range: 0.0 to -1000.0");
-            calRangeBias_ = var;
-        } else {
+            lidar_.SetRangeBiasOVR(var);
+        }
+        // calAlpaAngleStep
+        else if (p.get_name() == "calAlpaAngleStep") {
+            double var = p.as_double();
+            if (var > 2.0 || var <= 0.0 ) return paramFail("calAlpaAngleStep out of range: >0.0 to 2.0");
+            lidar_.SetAlphaAngleStepOVR(var);
+        }
+        // calAlphaAngleBias
+        else if (p.get_name() == "calAlphaAngleBias") {
+            double var = p.as_double();
+            if (var > 8.0 || var < -8.0 ) return paramFail("calAlphaAngleBias out of range: -8.0 to 8.0");
+            lidar_.SetAlphaAngleBiasOVR(var);
+        }
+        // calBetaAngle
+        else if (p.get_name() == "calBetaAngle") {
+            double var = p.as_double();
+            if (var > 8.0 || var < -8.0 ) return paramFail("calBetaAngle out of range: -8.0 to 8.0");
+            lidar_.SetBetaAngleOVR(var);
+        }
+        // calXiAngle
+        else if (p.get_name() == "calXiAngle") {
+            double var = p.as_double();
+            if (var > 8.0 || var < -8.0 ) return paramFail("calXiAngle out of range: -8.0 to 8.0");
+            lidar_.SetXiAngleOVR(var);
+        }
+        // calThetaAngleBias
+        else if (p.get_name() == "calThetaAngleBias") {
+            double var = p.as_double();
+            if (var > 360.0 || var < 0.0 ) return paramFail("calThetaAngleBias out of range: 0.0 to 360.0");
+            lidar_.SetThetaAngleBiasOVR(var);
+        }
+        // FlattenScan
+        else if (p.get_name() == "FlattenScan") {
+            bool var = p.as_bool();
+            lidar_.EnableFlattenScan(var);
+        }
+        // EnableRangeCorrection
+        else if (p.get_name() == "EnableRangeCorrection") {
+            bool var = p.as_bool();
+            lidar_.EnableRangeCorrection(var);
+        }
+        // EnableAlphaAngleLUT
+        else if (p.get_name() == "EnableAlphaAngleLUT") {
+            bool var = p.as_bool();
+            lidar_.EnableAlphaAngleLUT(var);
+        }
+        // CalibrationFile
+        else if (p.get_name() == "CalibrationFile") {
+            auto var = p.as_string();
+            if(var!="") { // check no file specified
+                if(!lidar_.LoadCalibration(var)) {
+                    RCLCPP_ERROR(get_logger(), "LoadCalibration failed: %s", var.c_str());
+                    for (const auto& message : lidar_.GetCalibrationErrors())
+                    {
+                        RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+                    }
+                    for (const auto& message : lidar_.GetCalibrationWarnings())
+                    {
+                        RCLCPP_WARN(get_logger(), "%s", message.c_str());
+                    }
+                    return paramFail("Calibration file load failed");
+                } else {
+                    RCLCPP_INFO(get_logger(), "Loaded Calibration file: %s", var.c_str());
+                }
+            }
+        }
+        // no match for dynamic parameters
+        else {
             return paramFail("param mismatch or can not be changed dynamically");
         }
     }
-
     return paramSuccess();
 }
 

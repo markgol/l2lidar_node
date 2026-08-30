@@ -52,6 +52,20 @@
 //                  parseFromPacketToPointCloud()
 //                  parseFromPacketPointCloud2D()
 //  2026-06-18  Comment updates only, removal of unused includes
+//  2026-07-05  Changed PointUnitree to include both calibrated range and raw range value.
+//              Changed return of range value from parseFromPacketToPointCloud()
+//                  and parseFromPacketPointCloud2D() to be calibrated range of a point.
+//                  The raw range value from the L2 is returned in a PointUnitree field called raw_range.
+//  2026-07-11  Added SelectiveParseFromPacketToPointCloud() for 3d scans
+//                   This is not part of the original Unitree utilities.h SDK
+//  2026-07-11  Moved SelectiveParseFromPacketToPointCloud() to L2lidar class
+//              Moved inAngularWindow() to L2lidar class
+//
+//  NOTE: There are no plans for further changes to this file
+//  Any future changes will be made outside the scope this file.
+//  The functions included in this file: parseFromPacketToPointCloud() and
+//  parseFromPacketToPointCloud2d() are depracated and will not be maintained
+//  in future releases of the l2lidar class software.
 //
 //-----------------------------------------------------------------------
 
@@ -92,6 +106,7 @@ typedef struct
     float z;
     float intensity;
     float range;
+    float raw_range;
     double time; // changed to double to maintain precicion
     uint32_t ring; // ring is always 1
 } PointUnitree;
@@ -182,13 +197,6 @@ inline uint32_t crc32(const uint8_t *buf, uint32_t len)
 //  to maintain time precision downstream
 //  Changed the math from float to double for improved precision
 //-----------------------------------------------------------------------
-//
-// @brief Parse from a point packet to a 3D point cloud
-// @param[out] cloud
-// @param[in] packet lidar point data packet
-// @param[in] use_system_timestamp use system timestamp, otherwise use packet timestamp
-// @param[in] range_min allowed minimum point range in meters
-// @param[in] range_max allowed maximum point range in meters
 //
 inline void parseFromPacketToPointCloud(
     PointCloudUnitree &cloud,
@@ -296,7 +304,8 @@ inline void parseFromPacketToPointCloud(
         // push back this point to cloud
         point3d.intensity = intensities[j];
         point3d.time = time_relative;  // this was changed to double
-        point3d.range = (float)ranges[j]/(float)1000.0; // convert  mm to meters
+        point3d.raw_range = (float)ranges[j]/(float)1000.0; // convert  mm to meters
+        point3d.range = range_float; // calibrated range value
         cloud.points.push_back(point3d);
     }
 }
@@ -398,7 +407,8 @@ inline void parseFromPacketPointCloud2D(
 
         // push back this point to cloud
         point3d.intensity = intensities[j];
-        point3d.range = (float)ranges[j]/(float)1000.0; // convert mm to meters
+        point3d.raw_range = (float)ranges[j]/(float)1000.0; // convert mm to meters
+        point3d.range = range_float; // calibrated range value
         point3d.time = time_relative;
         cloud.points.push_back(point3d);
     }

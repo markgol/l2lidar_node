@@ -62,6 +62,9 @@
 //      Added LIDAR PARAMETER DATA PACKET definitions
 //      Removed unused #includes
 //
+//  NOTE: There are no plans for further changes to this file
+//  Any future changes will be made outside the scope this file.
+//
 //------------------------------------------------
 //
 // When including this file you must do the following:

@@ -1,13 +1,13 @@
 l2lidar_node
 ============
 
-**updated 2026-08-28**
+**updated 2026-06-23**
 ============
 
 Overview
 ============
 
-l2lidar_ros2 is a standalone ROS 2 Jazzy driver node for the **Unitree L2 4D LiDAR** sensor.  It provides a high-performance interface between the Unitree L2 hardware and ROS 2 by leveraging a Qt 6.11 UDP backend (`L2lidar` class) for deterministic packet handling, timestamp synchronization, and decoding.
+l2lidar_ros2 is a standalone ROS 2 Jazzy driver node for the **Unitree L2 4D LiDAR** sensor.  It provides a high-performance interface between the Unitree L2 hardware and ROS 2 by leveraging a Qt 6.10 UDP backend (`L2lidar` class) for deterministic packet handling, timestamp synchronization, and decoding.
 
 This package publishes **3D point cloud** and **IMU data** using standard ROS 2 message types and is intended for robotics perception, mapping, and localization applications.
 
@@ -28,7 +28,7 @@ Features
 
 * Native ROS 2 Jazzy node (C++20)
 
-* Qt 6.11 UDP backend (Core + Network only, no GUI, minimal number of shared libraries needed (5)  for porting)
+* Qt 6.10 UDP backend (Core + Network only, no GUI, minimal number of shared libraries needed (5)  for porting)
 
 * Publishes:
   
@@ -184,7 +184,7 @@ Build Requirements
 
 * ROS 2 Jazzy
 
-* Qt 6.11.2 or newer (Core + Network only)
+* Qt 6.10.2 or newer (Core + Network only)
 
 * CMake ≥ 3.22
 
@@ -207,11 +207,11 @@ Ensure ROS is sourced:
 
 * * *
 
-### 2. Install of Qt 6.11.2 (optional if using prebuilt exectuable)
+### 2. Install of Qt 6.10.2 (optional if using prebuilt exectuable)
 
-Install Qt 6.11.2 using the Qt Online Installer:
+Install Qt 6.10.2 using the Qt Online Installer:
 
-`/opt/Qt/6.11.2/gcc_64`
+`/opt/Qt/6.10.2/gcc_64`
 
 Make sure Qt6 Core and Network modules are installed.
 
@@ -433,7 +433,7 @@ Debugging
 
 Run under debugger from QtCreator:
 
-* Configure kit with Qt 6.11
+* Configure kit with Qt 6.10
 
 * Source ROS2 environment
 
@@ -456,7 +456,7 @@ Known Limitations
 
 * Note: RViz IMU display plugin is not available in ros2 Jazzy; visualization is via TF and point cloud only
 
-* Requires Qt 6.11 or later due to UDP reliability fixes (Qt 6.4 is not supported). This isonly required if your are compiling and building the app
+* Requires Qt 6.10 or later due to UDP reliability fixes (Qt 6.4 is not supported). This isonly required if your are compiling and building the app
 
 * * *
 
