@@ -1,0 +1,31 @@
+These are examples of setting the vraious dynamic parameters using
+ROS2 command line.
+
+Note: When specifying a floating value it must contain a decimal point.
+
+ros2 param set /l2lidar_node imu_adjust false
+ros2 param set /l2lidar_node imu_adjust true
+
+ros2 param set /l2lidar_node aggregateNframes 0
+ros2 param set /l2lidar_node aggregateNframes 38
+
+ros2 param set /l2lidar_node EnableCalRangeOVR true
+ros2 param set /l2lidar_node EnableCalRangeOVR false
+
+ros2 param set /l2lidar_node calRangeBias -1000.0
+ros2 param set /l2lidar_node calRangeBias -365.625
+ros2 param set /l2lidar_node calRangeBias 0.0
+
+ros2 param set /l2lidar_node calRangeScale 0.0005
+ros2 param set /l2lidar_node calRangeScale 0.000978
+rose param set /l2lidar_node calRangeScale 0.0025
+
+
+To turn OFF rotation of the L2 (standby mode) use the following:
+
+ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: false}"
+
+
+To turn ON rotation of the L2 (run mode) use the following:
+
+ros2 service call /l2lidar_node/enable std_srvs/srv/SetBool "{data: true}"
