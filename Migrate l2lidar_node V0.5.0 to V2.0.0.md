@@ -44,7 +44,7 @@ These changes were made in 2 places:
 
 - ThetaAngleBias: 120.0
 
-- MinRangeTrusted: 150.0
+- MinTrustedRange: 150.0
   
   
 

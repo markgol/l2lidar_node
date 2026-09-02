@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-08-28**
+**updated 2026-09-01**
 ============
 
 Overview
@@ -74,6 +74,8 @@ l2lidar_node
         +--> /tf_static
                 cloud_frame -> imu_frame (intrinsic L2 IMU offset; gated by publish_tf)
 
+        +-->/min_trusted_range (ranges less than this are not reliable and may have significant error in range)
+
 The node uses Qt’s networking and event system for UDP packet reception and ROS 2 publishers for message dissemination. No Qt GUI or ROS GUI dependencies are used.
 
 ****
@@ -97,11 +99,12 @@ https://github.com/markgol/l2lidar_node/tree/main/executables
 Topics
 ------
 
-| Topic        | Message Type                     | Description                                                                                     |
-| ------------ | -------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `/points`    | `sensor_msgs/PointCloud2`        | 3D point cloud with intensity, time, and optional range field                                   |
-| `/imu/data`  | `sensor_msgs/Imu`                | Orientation, angular velocity, and linear acceleration                                          |
-| `/tf_static` | `geometry_msgs/TransformStamped` | Static transform between LiDAR and IMU frames<br/>optional static transform robot base to LiDar |
+| Topic              | Message Type                     | Description                                                                                                                            |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `/points`          | `sensor_msgs/PointCloud2`        | 3D point cloud with intensity, time, and optional range field                                                                          |
+| `/imu/data`        | `sensor_msgs/Imu`                | Orientation, angular velocity, and linear acceleration                                                                                 |
+| `/tf_static`       | `geometry_msgs/TransformStamped` | Static transform between LiDAR and IMU frames<br/>optional static transform robot base to LiDar                                        |
+| /min_trusted_range | sensor_msgs/Float64              | Ranges under this value have been determined as not reliable and may have significant range errors.  If -1 then this has not been set. |
 
 * * *
 
@@ -154,9 +157,23 @@ Parameters
 | pitch_covar                 | double | 4.9e-9                               | variance for pitch (from quaternion pose)                                                                                                                                                                                                                                                                                                |
 | yaw_covar                   | double | 10                                   | variance for yaw (from quaternion pose)                                                                                                                                                                                                                                                                                                  |
 | aggregateNframes            | int    | 38                                   | Number of L2 frames to aggregate for publishing (Dynamic)                                                                                                                                                                                                                                                                                |
-| EnableCalRangeOVR           | bool   | false                                | Override internal L2 Range calibration (Dynamic)                                                                                                                                                                                                                                                                                         |
-| calRangeScale               | float  | 0.000978                             | Range Scale override value (Dynamic)                                                                                                                                                                                                                                                                                                     |
-| calRangeBias                | float  | -365.625                             | Range Bias override value (Dynamic)                                                                                                                                                                                                                                                                                                      |
+| StartScanAngle              | double | 0.0                                  | Process point cloud scans only within the StartScanAngle(degrees CCW) and ScanAngleWidth(degrees CCW). If 360.0 process all point cloud scans.                                                                                                                                                                                           |
+| ScanAngleWidth              | double | 360.0                                | Process point cloud scans only within the StartScanAngle(degrees CCW) and ScanAngleWidth(degrees CCW). If 360.0 process all point cloud scans.                                                                                                                                                                                           |
+| FlattenScan                 | double | false                                | Flatten the 3d point cloud to a 2d point cloud in 3d space located at StartScanAngle+ScanAngleWidth/2                                                                                                                                                                                                                                    |
+| EnableCalibrationOVR        | bool   | false                                | Override internal L2 Range calibration (Dynamic)                                                                                                                                                                                                                                                                                         |
+| RangeScale                  | double | 0.000978                             | Range Scale override value (Dynamic)                                                                                                                                                                                                                                                                                                     |
+| RangeBias                   | double | -365.625                             | Range Bias override value (Dynamic)                                                                                                                                                                                                                                                                                                      |
+| MinRange_mm                 | double | 150.0                                | Do not process point cloud point with a range less than Min_Range_mm (in millilters)                                                                                                                                                                                                                                                     |
+| MaxRange_mm                 | double | 40000.0                              | Do not process point cloud point with a range greater than Min_Range_mm (in millilters)                                                                                                                                                                                                                                                  |
+| AlphaAngleStep              | double | 0.602                                | Step size of the elevation scan angle for the fast scan (degrees)                                                                                                                                                                                                                                                                        |
+| AlphaAngleBias              | double | 1.15                                 | Offset of the elevation scan angle for the fast scan (degrees)                                                                                                                                                                                                                                                                           |
+| BetaAngle                   | double | 0.25                                 | laser alignment (degrees)                                                                                                                                                                                                                                                                                                                |
+| XiAngle                     | double | 0.20                                 | laser alignment (degrees)                                                                                                                                                                                                                                                                                                                |
+| ThetaAngleBias              | double | 120.0                                | Offset for slow scan angle start to align where 0.0 deg Azimuth is on the L2 mounted on the platform. (degrees)                                                                                                                                                                                                                          |
+| MinTrustedRange_mm          | double | 150.0                                | This is only used for publishing a minimum trusted range.  It is not used in any point processing in this node.                                                                                                                                                                                                                          |
+| EnableRangeCorrection       | bool   | false                                | Enable Range correction for processing cloud points                                                                                                                                                                                                                                                                                      |
+| EnableAlphaAngleLUT         | bool   | false                                | Enable Alpha Angle LUT correction for processing cloud points                                                                                                                                                                                                                                                                            |
+| CalibrationFile             | string | ""                                   | Name of calibration file to load. If "" then no calibration file                                                                                                                                                                                                                                                                         |
 | watchdog_timeout_ms         | int    | 35000                                | max time without data from L2 in msec                                                                                                                                                                                                                                                                                                    |
 | point_cloud_topic_id        | string | /points                              | Topic ID for point cloud publishing                                                                                                                                                                                                                                                                                                      |
 | imu_topic_id                | string | /imu/data                            | Topic IF for IMU publishing                                                                                                                                                                                                                                                                                                              |
@@ -173,7 +190,7 @@ ros2 param set l2lidar_node imuRollPitchOnly true
 ros2 param set l2lidar_node UseSystemTimeTS false
 ```
 
-Note: realtime overrides of parameters are not persistent. If you want persistence you need to change the config yaml file.
+Note: realtime overrides of parameters are not persistent. If you want persistence you need to change the config yaml file or specify a calibration file in the config yaml file.
 
 * * *
 
@@ -209,9 +226,11 @@ Ensure ROS is sourced:
 
 ### 2. Install of Qt 6.11.2 (optional if using prebuilt exectuable)
 
-Install Qt 6.11.2 using the Qt Online Installer:
+Install Qt 6.11.2 using the Qt Online Installer (you will need a Qt account):
 
-`/opt/Qt/6.11.2/gcc_64`
+```
+https://my.qt.io/download
+```
 
 Make sure Qt6 Core and Network modules are installed.
 
@@ -269,15 +288,21 @@ Running the Node
 
 You should edit this to point to where you have the yaml configuration file.
 
-`run l2lidar_node l2lidar_node --ros-args --params-file \home\robot\SoftwareDev\ros2_ws\src\l2lidar_node\bin\gcc_64\config/l2lidar_node.yaml`
+```
+run l2lidar_node l2lidar_node --ros-args --params-file \home\robot\SoftwareDev\ros2_ws\src\l2lidar_node\bin\gcc_64\config/l2lidar_node.yaml
+```
 
 Or using a launch file:
 
-`ros2 launch l2lidar_node l2lidar.launch.py`
+```
+ros2 launch l2lidar_node l2lidar.launch.py
+```
 
 Or from terminal in folder with exectuable:
 
-`./l2lidar_node --params-file ./config/l2lidar_node.yaml`
+```
+./l2lidar_node --params-file ./config/l2lidar_node.yaml
+```
 
 This assumes are you in the folder with the following files:
     l2lidar_node
@@ -292,11 +317,15 @@ RViz2 Visualization
 
 Start RViz2:
 
-`rviz2`
+```
+rviz2
+```
 
 Load the provided configuration:
 
-`rviz2 -d rviz/rvizl2lidar.rviz`
+```
+rviz2 -d rviz/rvizl2lidar.rviz
+```
 
 Recommended settings:
 
@@ -513,7 +542,7 @@ The example URDFs are plain (not xacro), use the bundled L2 mesh from `meshes/l2
 
 * * *
 
-Migration from V0.3.x to V0.5
+Migration from V0.3.x to V0.5 (V2.0.x) for TFs
 -----------------------------
 
 V0.5 simplifies the static-TF surface and aligns the parameter naming with ROS conventions used by `realsense_ros`, `ouster_ros`, `livox_ros_driver2`, and `velodyne_pointcloud`. Seven legacy parameters are replaced with three new ones; the node now emits a single intrinsic static TF instead of two. URDF (or a single static_transform_publisher) takes ownership of the extrinsic placement.
@@ -587,7 +616,8 @@ ros2 run tf2_ros static_transform_publisher \
 
 ### `disable_base_link_pub` users
 
-If your V0.3.5+ config had `disable_base_link_pub: true`, you were already taking ownership of the static TF in your URDF. Under V0.5, this is the only mode the driver supports — the flag is gone because the TF is gated is no longer emitted at all. Migration is the same as above; you can just delete the `disable_base_link_pub` line from your YAML.
+`disable_base_link_pub:` in the config yaml file has been depracated starting in V0.5.0.
+You can just delete the `disable_base_link_pub` line from your YAML.
 
 * * *
 
@@ -598,7 +628,9 @@ Versions
 
 ### Current Version
 
-**0.5.0** – Single-frame geometry refactor (breaking change). Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`). Auto-derived IMU frame from `cloud_frame`. Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement. See **Migration from V0.3.x to V0.5** above. Version bumped from prior `0.3.7` (CMakeLists.txt) and `0.2.3` (package.xml) — both unified at `0.5.0`.
+**2.1.0** – Added multiple calibration overrides to builtin clibration parameters for converting cloud point to x,y,z point cloud coordinates. 
+Added support for a calibration file which contains 3 sections; calibration override parameters along with meta data, range correction model, and an Alpha angle LUT.
+Added publication of topic /min_trusted_range.
 
 
 
@@ -660,6 +692,8 @@ Added initialization of the accelerometer and gyroscopic covariances for the IMU
 **0.3.7** - Code cleanup: renaming l2lidar_node class members variable to end with _ , comments updates. Disable/enable watchdog timeout for supporting L2 startup in standby.  Added topic IDs to be set in the config .yaml file. Documentation cleanup and updated to reflect current operation.  Added the license folder that was lost in V0.3.6.
 
 **0.3.8** - Added dynamic config params for roll, pitch only pose correction and use system now timestamp for IMU and point cloud timestamps.  Added config params for roll, pitch, yaw covariance values. Updated to L2lidarClass V1.3.4.
+
+**0.5.0** – Single-frame geometry refactor (breaking change). Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`). Auto-derived IMU frame from `cloud_frame`. Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement. See **Migration from V0.3.x to V0.5** above. Version bumped from prior `0.3.7` (CMakeLists.txt) and `0.2.3` (package.xml) — both unified at `0.5.0`.
 
 * * *
 

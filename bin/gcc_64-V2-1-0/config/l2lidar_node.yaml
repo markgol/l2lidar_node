@@ -105,6 +105,7 @@ l2lidar_node:
     # ---------------- Topics IDs --------------
     point_cloud_topic_id: /points
     imu_topic_id: /imu/data
+    min_trusted_range_topic_id: /min_trusted_range
 
     # power on state (disables timeout until start service sent)
     standby_on_powerup_enabled: false

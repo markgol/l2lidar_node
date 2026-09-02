@@ -125,6 +125,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <std_msgs/msg/float64.hpp>
 
 #include <QCoreApplication>
 #include <QObject>
@@ -154,6 +155,7 @@ private slots:
 private:
     void publishStaticTransform();
     void shutdownNode(const std::string &reason);
+    void PublishMinTrustedRange(double mr);
 
     L2lidar lidar_;
 
@@ -164,6 +166,7 @@ private:
 
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr MinTrustedRange_pub_;
     std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_broadcaster_;
 
     // Live enable/disable service. data=true starts rotation, data=false

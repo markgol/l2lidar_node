@@ -123,6 +123,7 @@
 //                          Added support for calibration file which contains
 //                              calibration parameter overrides, range correction, elevation angle correction
 //                          Added many of calibration overrides as dynamics
+//      V2.1.0  2026-09-01  Added publisher for min_trusted_range.
 //
 //
 //  Note: class member variables end with an _
@@ -145,7 +146,6 @@
 //--------------------------------------------------------
 
 #include "l2lidar_node.hpp"
-
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 
 //---------------------------------------------------------------------
@@ -281,10 +281,10 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     // override the L2 internal calibration for RangeScale and RangeBias
 
     // calRangeScale
-    double calRangeScale;
-    declare_parameter<double>("calRangeScale", 0.000978);
-    get_parameter("calRangeScale", calRangeScale);
-    lidar_.SetRangeScaleOVR(calRangeScale);
+    double RangeScale;
+    declare_parameter<double>("RangeScale", 0.000978);
+    get_parameter("RangeScale",RangeScale);
+    lidar_.SetRangeScaleOVR(RangeScale);
 
     // calRangeBias
     double RangeBias;
@@ -461,11 +461,13 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<double>("yaw_covar", 10.0); // large because yaw is not reliable
 
     // Topic IDs for publishing
-    std::string point_cloud_topic_id, imu_topic_id;
+    std::string point_cloud_topic_id, imu_topic_id, min_trusted_range_topic_id;
     declare_parameter<std::string>("point_cloud_topic_id", "/points");
     get_parameter("point_cloud_topic_id", point_cloud_topic_id);
     declare_parameter<std::string>("imu_topic_id", "/imu/data");
     get_parameter("imu_topic_id", imu_topic_id);
+    declare_parameter<std::string>("min_trusted_range_topic_id", "/min_trusted_range");
+    get_parameter("min_trusted_range_topic_id", min_trusted_range_topic_id);
 
     // disable node timeout if L2 is set for standby on power up
     bool standby_on_powerup_enabled;
@@ -479,6 +481,7 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
 
     //---------------------------------------------------
     // publishing initialization
+    //---------------------------------------------------
 
     // This node still needs to process IMU packets from the L2
     // so that rotation correction cn be applied if enabled
@@ -487,13 +490,23 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
         imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(imu_topic_id, rclcpp::SensorDataQoS());
     }
 
+    // publish point cloud topic
     pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(point_cloud_topic_id, rclcpp::SensorDataQoS());
 
+    // publish min_trusted_range
+    auto metadata_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+    MinTrustedRange_pub_ = create_publisher<std_msgs::msg::Float64>(min_trusted_range_topic_id, metadata_qos);
+    std_msgs::msg::Float64 message;
+    message.data = MinTrustedRange_mm/1000.0;
+    MinTrustedRange_pub_->publish(message);
+
+    // publish static transforms
     tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
     publishStaticTransform();
 
     //----------------------------------------------------------------------------
     // L2 initialzation
+    //----------------------------------------------------------------------------
 
     // initialize UDP addresses and ports for sending and receiving UDP packets
     lidar_.LidarSetCmdConfig(
@@ -640,6 +653,17 @@ void L2LidarNode::watchdogCheck()
         shutdownNode("Watchdog timeout: PointCloud data stalled");
         return;
     }
+}
+
+//---------------------------------------------------------------------
+// PublishMinTrustedRange
+//---------------------------------------------------------------------
+void L2LidarNode::PublishMinTrustedRange(double mr)
+{
+    std_msgs::msg::Float64 message;
+    message.data = mr;
+
+    MinTrustedRange_pub_->publish(message);
 }
 
 //---------------------------------------------------------------------
@@ -899,48 +923,48 @@ rcl_interfaces::msg::SetParametersResult L2LidarNode::onParamChange(
             bool flag = p.as_bool();
             lidar_.EnableCalibrationOVR(flag);
         }
-        // calRangeScale
-        else if (p.get_name() == "calRangeScale") {
+        // RangeScale
+        else if (p.get_name() == "RangeScale") {
             double var = p.as_double();
             if (var < 0.00025 || var > 0.002) {
-                return paramFail("calRangeScale out of range: 0.00025 - 0.002");
+                return paramFail("RangeScale out of range: 0.00025 - 0.002");
             }
             lidar_.SetRangeScaleOVR(var);
         }
-        // calRangeBias
-        else if (p.get_name() == "calRangeBias") {
+        // RangeBias
+        else if (p.get_name() == "RangeBias") {
             double var = p.as_double();
-            if (var > 0.0 || var < -1000.0 ) return paramFail("calRangeBias out of range: 0.0 to -1000.0");
+            if (var > 0.0 || var < -1000.0 ) return paramFail("RangeBias out of range: 0.0 to -1000.0");
             lidar_.SetRangeBiasOVR(var);
         }
-        // calAlpaAngleStep
-        else if (p.get_name() == "calAlpaAngleStep") {
+        // AlpaAngleStep
+        else if (p.get_name() == "AlpaAngleStep") {
             double var = p.as_double();
-            if (var > 2.0 || var <= 0.0 ) return paramFail("calAlpaAngleStep out of range: >0.0 to 2.0");
+            if (var > 2.0 || var <= 0.0 ) return paramFail("AlpaAngleStep out of range: >0.0 to 2.0");
             lidar_.SetAlphaAngleStepOVR(var);
         }
-        // calAlphaAngleBias
-        else if (p.get_name() == "calAlphaAngleBias") {
+        // AlphaAngleBias
+        else if (p.get_name() == "AlphaAngleBias") {
             double var = p.as_double();
-            if (var > 8.0 || var < -8.0 ) return paramFail("calAlphaAngleBias out of range: -8.0 to 8.0");
+            if (var > 8.0 || var < -8.0 ) return paramFail("AlphaAngleBias out of range: -8.0 to 8.0");
             lidar_.SetAlphaAngleBiasOVR(var);
         }
-        // calBetaAngle
-        else if (p.get_name() == "calBetaAngle") {
+        // BetaAngle
+        else if (p.get_name() == "BetaAngle") {
             double var = p.as_double();
-            if (var > 8.0 || var < -8.0 ) return paramFail("calBetaAngle out of range: -8.0 to 8.0");
+            if (var > 8.0 || var < -8.0 ) return paramFail("BetaAngle out of range: -8.0 to 8.0");
             lidar_.SetBetaAngleOVR(var);
         }
-        // calXiAngle
-        else if (p.get_name() == "calXiAngle") {
+        // XiAngle
+        else if (p.get_name() == "XiAngle") {
             double var = p.as_double();
-            if (var > 8.0 || var < -8.0 ) return paramFail("calXiAngle out of range: -8.0 to 8.0");
+            if (var > 8.0 || var < -8.0 ) return paramFail("XiAngle out of range: -8.0 to 8.0");
             lidar_.SetXiAngleOVR(var);
         }
-        // calThetaAngleBias
-        else if (p.get_name() == "calThetaAngleBias") {
+        // ThetaAngleBias
+        else if (p.get_name() == "ThetaAngleBias") {
             double var = p.as_double();
-            if (var > 360.0 || var < 0.0 ) return paramFail("calThetaAngleBias out of range: 0.0 to 360.0");
+            if (var > 360.0 || var < 0.0 ) return paramFail("ThetaAngleBias out of range: 0.0 to 360.0");
             lidar_.SetThetaAngleBiasOVR(var);
         }
         // FlattenScan

@@ -36,6 +36,7 @@
 //                          which includes the overrride biases.
 //                      Changed files/names to reflect generalization
 //                          of the calibration file rather than RangeCorrection file
+//  V2.1.1  2026-09-01  Fixed logic validation error for MinTrustedRange
 //
 //--------------------------------------------------------
 
@@ -329,12 +330,6 @@ bool L2calibration::ParseMetadataLine(
                 std::to_string(lineNumber) +
                 ": Invalid MinTrustedRange value.\n");
             return false;
-        }
-        if(!(minTrusted <= 0) && minTrusted < mCalibrationInfo.MinRange) {
-            mErrors.push_back(
-                "Line " +
-                std::to_string(lineNumber) +
-                ": Invalid: MinTrustRange < MinRange\n");
         }
         mCalibrationInfo.MinTrustedRange = minTrusted;
     } else if (key == META_CAL_MIN_RANGE) {
@@ -931,7 +926,8 @@ bool L2calibration::ValidateMeta(const CalibrationInfo& info)
             );
         return false;
     }
-    if((info.MinTrustedRange >= 0) && info.MinTrustedRange < info.MinRange) {
+    if((info.MinTrustedRange >= 0 ) && info.MinTrustedRange < info.MinRange) {
+        // MinTrustRange = -1 means not specified
         mErrors.emplace_back(
             "MinTrustedRange < MinRange"
             );
@@ -941,7 +937,7 @@ bool L2calibration::ValidateMeta(const CalibrationInfo& info)
     if(info.RangeCalMethod!="None") {
         if(info.MinCalRange >= info.MaxCalRange) {
             mErrors.emplace_back(
-                "MinCalRange >= MacCalRange"
+                "MinCalRange >= MaxCalRange"
                 );
             return false;
         }

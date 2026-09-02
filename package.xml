@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>l2lidar_node</name>
-  <version>2.0.0</version>
+  <version>2.1.0</version>
   <description>L2 LiDAR ROS2 node driver using Qt6 UDP (Qt 6.11 runtime)</description>
 
   <maintainer email="17959258+markgol@users.noreply.github.com">Mark Stegall</maintainer>
