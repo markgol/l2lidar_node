@@ -1,0 +1,4 @@
+source ~/ros2_domain_and_dds.sh
+source /opt/ros/jazzy/setup.bash
+export CMAKE_PREFIX_PATH=/opt/Qt/6.11.2/gcc_arm64:$CMAKE_PREFIX_PATH
+ros2 daemon start
