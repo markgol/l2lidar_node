@@ -1,7 +1,7 @@
 l2lidar_node
 ============
 
-**updated 2026-09-01**
+**updated 2026-09-10**
 ============
 
 Overview
@@ -99,12 +99,22 @@ https://github.com/markgol/l2lidar_node/tree/main/executables
 Topics
 ------
 
-| Topic              | Message Type                     | Description                                                                                                                            |
-| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `/points`          | `sensor_msgs/PointCloud2`        | 3D point cloud with intensity, time, and optional range field                                                                          |
-| `/imu/data`        | `sensor_msgs/Imu`                | Orientation, angular velocity, and linear acceleration                                                                                 |
-| `/tf_static`       | `geometry_msgs/TransformStamped` | Static transform between LiDAR and IMU frames<br/>optional static transform robot base to LiDar                                        |
-| /min_trusted_range | sensor_msgs/Float64              | Ranges under this value have been determined as not reliable and may have significant range errors.  If -1 then this has not been set. |
+| Topic              | Message Type                     | Description                                                                                                                                           |
+| ------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/points`          | `sensor_msgs/PointCloud2`        | 3D point cloud with intensity, time, and optional range field (configurable)                                                                          |
+| `/imu`             | `sensor_msgs/Imu`                | Orientation, angular velocity, and linear acceleration (configurable)                                                                                 |
+| `/tf_static`       | `geometry_msgs/TransformStamped` | Static transform between LiDAR and IMU frames<br/>optional static transform robot base to LiDar                                                       |
+| /min_trusted_range | sensor_msgs/Float64              | Ranges under this value have been determined as not reliable and may have significant range errors.  If -1 then this has not been set. (configurable) |
+
+The topics ID except for tf_static are definable in the config yaml file.  They can be defined using following the model:
+
+/platform_topic_id/l2_name/topic_id
+
+example:
+
+/herman1/L2_top/points
+/herman1/L2_top/imu
+/herman1/L2_top/min_trusted_range
 
 * * *
 
@@ -143,7 +153,7 @@ Parameters
 | timeScaleDenom              | int64  | 1                                    | denominator for time correction scalar                                                                                                                                                                                                                                                                                                   |
 | UseSystemTimeTS             | bool   | false                                | Replace IMU and point cloud timestamp with system now timestamp (Dynamic)                                                                                                                                                                                                                                                                |
 | `enable_latency_measure`    | bool   | `false`                              | Enable latency measurement                                                                                                                                                                                                                                                                                                               |
-| `l2_name`                   | string | `l2lidar`                            | Prefix for default-derived frame names                                                                                                                                                                                                                                                                                                   |
+| `l2_name`                   | string | `l2lidar`                            | Prefix for default-derived frame names, also used for building the topic names                                                                                                                                                                                                                                                           |
 | `cloud_frame`               | string | `""` (resolves to `${l2_name}_link`) | Primary reference frame. Published as `header.frame_id` on `/points`, and the URDF / static_transform_publisher pin point for the device. IMU frame is auto-derived (strip trailing `_link` if present, append `_imu`). Override to embed a robot namespace for multi-robot / multi-device deployments. See **Coordinate Frames** below. |
 | `publish_tf`                | bool   | `true`                               | Emit the intrinsic `cloud_frame → imu_frame` static transform. Set `false` when URDF places both frames independently.                                                                                                                                                                                                                   |
 | `enable_IMU_publishing`     | bool   | `false`                              | true - publish IMU data                                                                                                                                                                                                                                                                                                                  |
@@ -175,6 +185,7 @@ Parameters
 | EnableAlphaAngleLUT         | bool   | false                                | Enable Alpha Angle LUT correction for processing cloud points                                                                                                                                                                                                                                                                            |
 | CalibrationFile             | string | ""                                   | Name of calibration file to load. If "" then no calibration file                                                                                                                                                                                                                                                                         |
 | watchdog_timeout_ms         | int    | 35000                                | max time without data from L2 in msec                                                                                                                                                                                                                                                                                                    |
+| platform_topic_id           | string | ""                                   | platform ID for building topic name                                                                                                                                                                                                                                                                                                      |
 | point_cloud_topic_id        | string | /points                              | Topic ID for point cloud publishing                                                                                                                                                                                                                                                                                                      |
 | imu_topic_id                | string | /imu/data                            | Topic IF for IMU publishing                                                                                                                                                                                                                                                                                                              |
 | standby_on_powerup_enabled  | bool   | false                                | Turn off watchdog timer at startup so L2 starting in standy mode won't timeout.                                                                                                                                                                                                                                                          |
@@ -440,10 +451,31 @@ A second robot would set `cloud_frame: "bot2/lidar/l2lidar_link"` and the two gr
 
 If the host's URDF places the IMU frame directly (e.g., with its own intrinsic offset characterization), set `publish_tf: false` to suppress the node's emission. The PointCloud2 and IMU `header.frame_id` fields are still written normally; only the static TF broadcast is suppressed.
 
+---
+
+### Creating TOPIC names
+
+The following config yaml parmeters are used to build topic names:
+
+| parameter                  | Requirements                   |
+| -------------------------- | ------------------------------ |
+| platform_topic_id          | "" or sting starting with '/'  |
+| l2_name                    | string must NOT start with '/' |
+| point_cloud_topic_id       | sting starting with '/'        |
+| imu_topic_id               | sting starting with '/'        |
+| min_trusted_range_topic_id | sting starting with '/'        |
+
+**The TOPIC is defined as:**  
+
+platform_topic_id + '/' + l2_name + point_cloud_topic_id
+
+platform_topic_id + '/' + l2_name + imu_topic_id
+
+platform_topic_id + '/' + l2_name + min_trusted_range_topid_id
+
 * * *
 
 Shutdown Behavior
------------------
 
 The node supports:
 
@@ -628,9 +660,7 @@ Versions
 
 ### Current Version
 
-**2.1.0** – Added multiple calibration overrides to builtin clibration parameters for converting cloud point to x,y,z point cloud coordinates. 
-Added support for a calibration file which contains 3 sections; calibration override parameters along with meta data, range correction model, and an Alpha angle LUT.
-Added publication of topic /min_trusted_range.
+**2.1.1** – Added parameters for creating TOPIC IDs using following model: /platform_id/sensor_id/data_topic.  The IDs are defined in the config yaml file.
 
 
 
@@ -694,6 +724,8 @@ Added initialization of the accelerometer and gyroscopic covariances for the IMU
 **0.3.8** - Added dynamic config params for roll, pitch only pose correction and use system now timestamp for IMU and point cloud timestamps.  Added config params for roll, pitch, yaw covariance values. Updated to L2lidarClass V1.3.4.
 
 **0.5.0** – Single-frame geometry refactor (breaking change). Replaced the seven legacy frame / placement parameters with three new ones (`l2_name`, `cloud_frame`, `publish_tf`). Auto-derived IMU frame from `cloud_frame`. Collapsed two static TFs into one intrinsic transform; URDF now owns the extrinsic placement. See **Migration from V0.3.x to V0.5** above. Version bumped from prior `0.3.7` (CMakeLists.txt) and `0.2.3` (package.xml) — both unified at `0.5.0`.
+
+**2.1.0** – Added multiple calibration overrides to builtin clibration parameters for converting cloud point to x,y,z point cloud coordinates. Added support for a calibration file which contains 3 sections; calibration override parameters along with meta data, range correction model, and an Alpha angle LUT.Added publication of topic /min_trusted_range.
 
 * * *
 

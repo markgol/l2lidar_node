@@ -124,6 +124,8 @@
 //                              calibration parameter overrides, range correction, elevation angle correction
 //                          Added many of calibration overrides as dynamics
 //      V2.1.0  2026-09-01  Added publisher for min_trusted_range.
+//      V2.1.1  2026-09-10  Updated topic naming covention to follow recommendations from:
+//                          https://design.ros2.org/articles/topic_and_service_names.html
 //
 //
 //  Note: class member variables end with an _
@@ -163,19 +165,6 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<std::string>("host_ip", "192.168.1.2");
     declare_parameter<int>("host_port", 6201);
 
-    // V0.5: single-frame topology. cloud_frame serves as both the URDF
-    // mounting reference and the cloud-data origin (per Unitree spec,
-    // these are the same physical frame — see README "Coordinate Frames").
-    // Default cloud_frame is empty as a sentinel for "derive from l2_name":
-    //   leave both defaults     -> cloud_frame = "l2lidar_link"
-    //   set l2_name=front_lidar -> cloud_frame = "front_lidar_link"
-    //   set cloud_frame=<X>     -> that exact value wins (for multi-robot
-    //                              namespacing, e.g. "bot1/lidar/l2lidar_link")
-    // imu_frame is auto-derived from cloud_frame at startup.
-    declare_parameter<std::string>("l2_name", "l2lidar");
-    declare_parameter<std::string>("cloud_frame", "");
-    declare_parameter<bool>("publish_tf", true);
-
     // adjust point cloud data using the gravity algined IMU packet pose
     bool imu_adjust;
     declare_parameter<bool>("imu_adjust", false);
@@ -194,6 +183,19 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     declare_parameter<bool>("EnableCalibrationOVR", false);
     get_parameter("EnableCalibrationOVR", EnableCalibrationOVR);
     lidar_.EnableCalibrationOVR(EnableCalibrationOVR);
+
+    // V0.5: single-frame topology. cloud_frame serves as both the URDF
+    // mounting reference and the cloud-data origin (per Unitree spec,
+    // these are the same physical frame — see README "Coordinate Frames").
+    // Default cloud_frame is empty as a sentinel for "derive from l2_name":
+    //   leave both defaults     -> cloud_frame = "l2lidar_link"
+    //   set l2_name=front_lidar -> cloud_frame = "front_lidar_link"
+    //   set cloud_frame=<X>     -> that exact value wins (for multi-robot
+    //                              namespacing, e.g. "bot1/lidar/l2lidar_link")
+    // imu_frame is auto-derived from cloud_frame at startup.
+    declare_parameter<std::string>("l2_name", "l2lidar");
+    declare_parameter<std::string>("cloud_frame", "");
+    declare_parameter<bool>("publish_tf", true);
 
     // ---------------------------------------
     // Now get parameters from config file
@@ -229,7 +231,44 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
         cloud_frame_.c_str(), imu_frame_.c_str(),
         publish_tf_ ? "true" : "false");
 
+    //----------------------------------------------------------
+    // Topic IDs for publishing
+    //
+    // Topics are built as platform_id+sensor_id+ specific_topic_id
+    // For example: /herman1/l2_top/points
+    //              /herman1/l2_top/imu
+    //              /herman1/l2_top/min_trusted_range
+    //  You can always set platform_id to ""
+    //
+    //  Note: topic IDs must start with '/'
+    //
+    //----------------------------------------------------------
+    std::string platform_topic_id;
+    std::string point_cloud_topic_id;
+    std::string imu_topic_id;
+    std::string min_trusted_range_topic_id;
+    std::string topic_id;
+
+    // platform_topic_id can be ""
+    declare_parameter<std::string>("platform_topic_id", "");
+    get_parameter("platform_topic_id", topic_id);
+    platform_topic_id = topic_id;
+
+    declare_parameter<std::string>("point_cloud_topic_id", "/points");
+    get_parameter("point_cloud_topic_id", topic_id);
+    point_cloud_topic_id = platform_topic_id + "/" + l2_name_ + topic_id;
+
+    declare_parameter<std::string>("imu_topic_id", "/imu");
+    get_parameter("imu_topic_id", topic_id);
+    imu_topic_id = platform_topic_id + "/" + l2_name_ + topic_id;
+
+    declare_parameter<std::string>("min_trusted_range_topic_id", "/min_trusted_range");
+    get_parameter("min_trusted_range_topic_id", topic_id);
+    min_trusted_range_topic_id = platform_topic_id + "/" + l2_name_ + topic_id;
+
+    //---------------------------------------------------
     // get UDP parameters, these are local
+    //---------------------------------------------------
     std::string l2_ip, host_ip;
     int l2_port, host_port;
 
@@ -238,7 +277,9 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     get_parameter("host_ip", host_ip);
     get_parameter("host_port", host_port);
 
+    //---------------------------------------------------
     // get time correction and timebase syncing parameters
+    //---------------------------------------------------
     bool latency;
 
     // Use sytem timestamp rather than L2 timestamp for packets
@@ -263,9 +304,11 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     get_parameter("timeScaleDenom", timeScaleDenom);
     lidar_.SetL2TimeScale(timeScaleNum,timeScaleDenom);
 
+    //---------------------------------------------------
     // UDP latency measurement
     // normally there would be no need to enable
     // mostly used as diagnostic
+    //---------------------------------------------------
     declare_parameter<bool>("enable_latency_measure", false);
     get_parameter("enable_latency_measure", latency);
 
@@ -460,15 +503,6 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     get_parameter("yaw_covar", yaw_covar_);
     declare_parameter<double>("yaw_covar", 10.0); // large because yaw is not reliable
 
-    // Topic IDs for publishing
-    std::string point_cloud_topic_id, imu_topic_id, min_trusted_range_topic_id;
-    declare_parameter<std::string>("point_cloud_topic_id", "/points");
-    get_parameter("point_cloud_topic_id", point_cloud_topic_id);
-    declare_parameter<std::string>("imu_topic_id", "/imu/data");
-    get_parameter("imu_topic_id", imu_topic_id);
-    declare_parameter<std::string>("min_trusted_range_topic_id", "/min_trusted_range");
-    get_parameter("min_trusted_range_topic_id", min_trusted_range_topic_id);
-
     // disable node timeout if L2 is set for standby on power up
     bool standby_on_powerup_enabled;
     declare_parameter<bool>("standby_on_powerup_enabled", false);
@@ -487,15 +521,18 @@ L2LidarNode::L2LidarNode(int argc, char **argv)
     // so that rotation correction cn be applied if enabled
     // The IMU publishing is also optional
     if(enable_IMU_publishing_) {
-        imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(imu_topic_id, rclcpp::SensorDataQoS());
+        imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(
+                                imu_topic_id, rclcpp::SensorDataQoS());
     }
 
     // publish point cloud topic
-    pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(point_cloud_topic_id, rclcpp::SensorDataQoS());
+    pcl_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+                                point_cloud_topic_id, rclcpp::SensorDataQoS());
 
     // publish min_trusted_range
     auto metadata_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
-    MinTrustedRange_pub_ = create_publisher<std_msgs::msg::Float64>(min_trusted_range_topic_id, metadata_qos);
+    MinTrustedRange_pub_ = create_publisher<std_msgs::msg::Float64>(
+                                min_trusted_range_topic_id, metadata_qos);
     std_msgs::msg::Float64 message;
     message.data = MinTrustedRange_mm/1000.0;
     MinTrustedRange_pub_->publish(message);

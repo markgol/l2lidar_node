@@ -47,6 +47,19 @@ l2lidar_node:
     cloud_frame: ""
     publish_tf: true
 
+    # ---------------- Topics IDs --------------
+    # Topic is built as platform_id+sensor_id+ specific_topic_id
+    #  For example:  /herman1/l2_top/points
+    #                /herman1/l2_top/imu
+    #                /herman1/l2_top/min_trusted_range
+    # You can always set platform_id to ""
+    #
+    platform_topic_id: "/herman1"
+    # The sensor_id = "/" + l2_name
+    point_cloud_topic_id: "/points"
+    imu_topic_id: "/imu"
+    min_trusted_range_topic_id: "/min_trusted_range"
+
     # ---------------- Point Cloud processing --------------
     frame3d: true
     imu_adjust: false
@@ -101,10 +114,6 @@ l2lidar_node:
     # 38 per rotation.  Th precession of the scans fills
     # in between the last rotation scans.
     aggregateNframes: 38
-
-    # ---------------- Topics IDs --------------
-    point_cloud_topic_id: /points
-    imu_topic_id: /imu/data
 
     # power on state (disables timeout until start service sent)
     standby_on_powerup_enabled: false

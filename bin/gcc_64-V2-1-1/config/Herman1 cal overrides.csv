@@ -1,0 +1,23 @@
+# Version,Range Correction Calibration spec V2.1.0
+# Date,2026-08-27 13:48:30
+# Sensor,Unitree L2 4D LiDAR
+# SensorID,Herman1
+# Firmware,unknown
+# CreatedBy,L2diagnostic V2.1.0
+# RangeCorrectionMethod,None
+# NumberRangeSegments,0
+# MinRange,150
+# MaxRange,40000
+# MinTrustedRange,1450
+# MinCalRange,0
+# MaxCalRange,0
+# RMSResidual,0
+# RangeBias,-535
+# RangeScale,0.000978
+# AlphaAngleBias,1.15
+# AlphaAngleStepSize,0.6025
+# ThetaAngleBias,122.5
+# BetaAngle,0.25
+# XiAngle,0.125
+# CalibrationDescription,Calibration overrides only
+

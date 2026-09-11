@@ -22,7 +22,7 @@
 //
 //		- Publishes (default:
 //			/points	(sensor_msgs/PointCloud2)
-//			/imu/data (sensor_msgs/Imu)
+//			/imu (sensor_msgs/Imu)
 //			Static TF transform support
 //
 //	Implementation
@@ -96,6 +96,8 @@
 //                              for it is not planned in any future updates.
 //                          Added support for calibration file which contains
 //                              calibration parameter overrides, range correction, elevation angle correction
+//  V2.1.1  2026-09-10  Updated topic naming covention to follow recommendations from:
+//                          https://design.ros2.org/articles/topic_and_service_names.html
 //
 //
 //  Note: class member variables end with an _

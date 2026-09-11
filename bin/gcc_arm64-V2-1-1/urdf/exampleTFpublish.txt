@@ -1,0 +1,1 @@
+ros2 run tf2_ros static_transform_publisher --x 0.025 --y 0 --z 0.34 --roll 0 --pitch 0 --yaw 0 --frame-id base_link --child-frame-id herman1_link
